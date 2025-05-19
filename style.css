@@ -1,0 +1,34 @@
+body {
+  margin: 0;
+  font-family: sans-serif;
+  text-align: center;
+  background-color: #aee1f9;
+}
+
+#game {
+  padding-top: 50px;
+}
+
+#dog {
+  font-size: 80px;
+  margin: 20px;
+}
+
+button#chikuwa {
+  padding: 10px 20px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.background-0 {
+  background-color: #aee1f9;
+}
+.background-1 {
+  background-color: #f9d5e5;
+}
+.background-2 {
+  background-color: #d5f9e5;
+}
+.background-3 {
+  background-color: #f9f1d5;
+}
