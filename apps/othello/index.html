@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>build: 2026-02-09-othello-v1 - オセロ</title>
+  <style>
+    :root {
+      --board-green: #0b6f2b;
+      --board-dark: #084c1d;
+      --accent: #ffda79;
+      --text: #1a1a1a;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      background: #f5f5f5;
+      color: var(--text);
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .build-label {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      text-align: center;
+      background: #ffffff;
+      border: 3px solid #000000;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      text-align: center;
+      margin: 12px 0 24px;
+    }
+    .status-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .status-box {
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 12px 16px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    }
+    .status-box h2 {
+      font-size: 16px;
+      margin: 0 0 8px;
+    }
+    .status-box p {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(40px, 1fr));
+      gap: 6px;
+      background: var(--board-dark);
+      padding: 12px;
+      border-radius: 12px;
+      box-shadow: inset 0 0 0 4px #063615;
+    }
+    .cell {
+      position: relative;
+      background: var(--board-green);
+      border: none;
+      border-radius: 8px;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .cell:disabled {
+      cursor: not-allowed;
+      opacity: 0.9;
+    }
+    .cell.valid {
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+    .cell.valid::after {
+      content: "";
+      position: absolute;
+      width: 35%;
+      height: 35%;
+      border-radius: 50%;
+      background: rgba(255, 218, 121, 0.75);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .cell.black::before,
+    .cell.white::before {
+      content: "";
+      position: absolute;
+      width: 75%;
+      height: 75%;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.15);
+    }
+    .cell.black::before {
+      background: #111111;
+    }
+    .cell.white::before {
+      background: #f8f8f8;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    button.restart {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 999px;
+      background: #222222;
+      color: #ffffff;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button.restart:hover {
+      background: #000000;
+    }
+    .message {
+      margin-top: 10px;
+      font-size: 16px;
+      min-height: 24px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="build-label">build: 2026-02-09-othello-v1</div>
+    <h1>白黒オセロ</h1>
+
+    <section class="status-panel">
+      <div class="status-box">
+        <h2>手番</h2>
+        <p id="turn-display">-</p>
+      </div>
+      <div class="status-box">
+        <h2>スコア</h2>
+        <p id="score-display">黒 2 / 白 2</p>
+      </div>
+      <div class="status-box">
+        <h2>状態</h2>
+        <p id="state-display">ゲーム開始</p>
+      </div>
+    </section>
+
+    <div id="board" class="board" aria-label="オセロ盤"></div>
+
+    <div class="controls">
+      <button class="restart" id="restart-button" type="button">リスタート</button>
+    </div>
+    <div class="message" id="message"></div>
+  </div>
+
+  <script>
+    const SIZE = 8;
+    const EMPTY = 0;
+    const BLACK = 1;
+    const WHITE = 2;
+
+    const boardElement = document.getElementById("board");
+    const turnDisplay = document.getElementById("turn-display");
+    const scoreDisplay = document.getElementById("score-display");
+    const stateDisplay = document.getElementById("state-display");
+    const messageElement = document.getElementById("message");
+    const restartButton = document.getElementById("restart-button");
+
+    let board = [];
+    let currentPlayer = BLACK;
+    let currentValidMoves = new Map();
+    let gameOver = false;
+    let cellButtons = [];
+
+    const directions = [
+      [-1, -1],
+      [-1, 0],
+      [-1, 1],
+      [0, -1],
+      [0, 1],
+      [1, -1],
+      [1, 0],
+      [1, 1]
+    ];
+
+    function createEmptyBoard() {
+      return Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+    }
+
+    function initializeBoard() {
+      board = createEmptyBoard();
+      const mid = SIZE / 2;
+      board[mid - 1][mid - 1] = WHITE;
+      board[mid][mid] = WHITE;
+      board[mid - 1][mid] = BLACK;
+      board[mid][mid - 1] = BLACK;
+    }
+
+    function playerName(player) {
+      return player === BLACK ? "黒" : "白";
+    }
+
+    function inBounds(row, col) {
+      return row >= 0 && row < SIZE && col >= 0 && col < SIZE;
+    }
+
+    function getFlips(row, col, player) {
+      if (board[row][col] !== EMPTY) {
+        return [];
+      }
+      const opponent = player === BLACK ? WHITE : BLACK;
+      const flips = [];
+
+      for (const [dx, dy] of directions) {
+        let r = row + dx;
+        let c = col + dy;
+        const line = [];
+        while (inBounds(r, c) && board[r][c] === opponent) {
+          line.push([r, c]);
+          r += dx;
+          c += dy;
+        }
+        if (line.length > 0 && inBounds(r, c) && board[r][c] === player) {
+          flips.push(...line);
+        }
+      }
+
+      return flips;
+    }
+
+    function calculateValidMoves(player) {
+      const moves = new Map();
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let col = 0; col < SIZE; col += 1) {
+          const flips = getFlips(row, col, player);
+          if (flips.length > 0) {
+            moves.set(`${row},${col}`, flips);
+          }
+        }
+      }
+      return moves;
+    }
+
+    function applyMove(row, col, flips, player) {
+      board[row][col] = player;
+      flips.forEach(([r, c]) => {
+        board[r][c] = player;
+      });
+    }
+
+    function countDiscs() {
+      let black = 0;
+      let white = 0;
+      for (const row of board) {
+        for (const cell of row) {
+          if (cell === BLACK) {
+            black += 1;
+          } else if (cell === WHITE) {
+            white += 1;
+          }
+        }
+      }
+      return { black, white };
+    }
+
+    function updateStatus(message) {
+      const { black, white } = countDiscs();
+      scoreDisplay.textContent = `黒 ${black} / 白 ${white}`;
+
+      if (gameOver) {
+        let result = "引き分け";
+        if (black > white) {
+          result = "黒の勝ち";
+        } else if (white > black) {
+          result = "白の勝ち";
+        }
+        turnDisplay.textContent = "-";
+        stateDisplay.textContent = `ゲーム終了 (${result})`;
+      } else {
+        turnDisplay.textContent = playerName(currentPlayer);
+        stateDisplay.textContent = "対局中";
+      }
+
+      messageElement.textContent = message || "";
+    }
+
+    function renderBoard() {
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let col = 0; col < SIZE; col += 1) {
+          const cell = cellButtons[row][col];
+          cell.classList.remove("black", "white", "valid");
+          const value = board[row][col];
+          if (value === BLACK) {
+            cell.classList.add("black");
+          } else if (value === WHITE) {
+            cell.classList.add("white");
+          }
+          const isValid = currentValidMoves.has(`${row},${col}`);
+          if (!gameOver && isValid) {
+            cell.classList.add("valid");
+            cell.disabled = false;
+          } else {
+            cell.disabled = true;
+          }
+        }
+      }
+    }
+
+    function setTurn(player, message = "") {
+      currentPlayer = player;
+      currentValidMoves = calculateValidMoves(player);
+      if (currentValidMoves.size === 0) {
+        const other = player === BLACK ? WHITE : BLACK;
+        const otherMoves = calculateValidMoves(other);
+        if (otherMoves.size === 0) {
+          gameOver = true;
+          currentValidMoves = new Map();
+          updateStatus("両者とも置ける手がありません。ゲーム終了です。");
+          renderBoard();
+          return;
+        }
+        currentPlayer = other;
+        currentValidMoves = otherMoves;
+        updateStatus(`${playerName(player)}は置ける手がありません。${playerName(other)}の番です。`);
+        renderBoard();
+        return;
+      }
+
+      updateStatus(message);
+      renderBoard();
+    }
+
+    function handleCellClick(event) {
+      if (gameOver) {
+        return;
+      }
+      const { row, col } = event.currentTarget.dataset;
+      const key = `${row},${col}`;
+      if (!currentValidMoves.has(key)) {
+        return;
+      }
+      const flips = currentValidMoves.get(key);
+      applyMove(Number(row), Number(col), flips, currentPlayer);
+      const nextPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+      setTurn(nextPlayer, "");
+    }
+
+    function buildBoardUI() {
+      boardElement.innerHTML = "";
+      cellButtons = [];
+      for (let row = 0; row < SIZE; row += 1) {
+        const rowCells = [];
+        for (let col = 0; col < SIZE; col += 1) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "cell";
+          button.dataset.row = row;
+          button.dataset.col = col;
+          button.addEventListener("click", handleCellClick);
+          boardElement.appendChild(button);
+          rowCells.push(button);
+        }
+        cellButtons.push(rowCells);
+      }
+    }
+
+    function restartGame() {
+      gameOver = false;
+      initializeBoard();
+      setTurn(BLACK, "ゲーム開始！黒の番です。");
+    }
+
+    restartButton.addEventListener("click", restartGame);
+
+    buildBoardUI();
+    restartGame();
+  </script>
+</body>
+</html>
