@@ -151,9 +151,19 @@
     <div class="stack">
       <div>
         <label>音響セッション</label>
-        <div class="buttons">
-          <button id="audioToggle">環境音を開始</button>
-          <button id="audioPulse">一時的な揺らぎを加える</button>
+        <div class="stack">
+          <div>
+            <label for="presetSelect">BGMプリセット</label>
+            <select id="presetSelect"></select>
+          </div>
+          <div>
+            <label for="masterVolume">マスター音量</label>
+            <input id="masterVolume" type="range" min="0" max="100" value="60" />
+          </div>
+          <div class="buttons">
+            <button id="audioToggle">環境音を開始</button>
+            <button id="audioPulse">一時的な揺らぎを加える</button>
+          </div>
         </div>
         <div class="status" id="audioStatus">音は停止中。ユーザー操作で開始できます。</div>
       </div>
@@ -215,6 +225,8 @@
     const memo = document.getElementById("memo");
     const canvas = document.getElementById("visual");
     const ctx = canvas.getContext("2d");
+    const presetSelect = document.getElementById("presetSelect");
+    const masterVolume = document.getElementById("masterVolume");
     const audioToggle = document.getElementById("audioToggle");
     const audioPulse = document.getElementById("audioPulse");
     const audioStatus = document.getElementById("audioStatus");
@@ -233,17 +245,22 @@
     let time = 0;
 
     let audioContext = null;
-    let audioGain = null;
-    let noiseSource = null;
-    let noiseGain = null;
-    let oscA = null;
-    let oscB = null;
+    let masterGain = null;
     let mediaStreamDest = null;
+    let activePreset = null;
+    let presetChangeTimeout = null;
 
     let recorder = null;
     let recordedChunks = [];
 
     const sessionsKey = "philoCinemaSessions";
+    const presets = [
+      { id: "rain", label: "雨" },
+      { id: "waves", label: "波" },
+      { id: "forest", label: "森" },
+      { id: "space", label: "宇宙" },
+      { id: "drone", label: "低音ドローン" },
+    ];
 
     const resizeCanvas = () => {
       const { width, height } = canvas.getBoundingClientRect();
@@ -262,6 +279,17 @@
       });
       questionSelect.value = "0";
       questionStatus.textContent = questions[0];
+    };
+
+    const buildPresetSelect = () => {
+      presetSelect.innerHTML = "";
+      presets.forEach((preset) => {
+        const option = document.createElement("option");
+        option.value = preset.id;
+        option.textContent = preset.label;
+        presetSelect.appendChild(option);
+      });
+      presetSelect.value = presets[0].id;
     };
 
     const updateQuestion = (index) => {
@@ -315,45 +343,218 @@
       typingEnergy = Math.min(80, typingEnergy + 15);
     };
 
-    const createAudio = () => {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      audioGain = audioContext.createGain();
-      audioGain.gain.value = 0.4;
-      audioGain.connect(audioContext.destination);
-
+    const createNoiseBuffer = () => {
       const bufferSize = audioContext.sampleRate * 2;
       const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
       const data = noiseBuffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i += 1) {
-        data[i] = (Math.random() * 2 - 1) * 0.6;
+        data[i] = Math.random() * 2 - 1;
       }
-      noiseSource = audioContext.createBufferSource();
-      noiseSource.buffer = noiseBuffer;
-      noiseSource.loop = true;
-      noiseGain = audioContext.createGain();
-      noiseGain.gain.value = 0.15;
-      noiseSource.connect(noiseGain).connect(audioGain);
+      return noiseBuffer;
+    };
 
-      oscA = audioContext.createOscillator();
-      oscA.type = "sine";
-      oscA.frequency.value = 110;
-      const oscAGain = audioContext.createGain();
-      oscAGain.gain.value = 0.2;
-      oscA.connect(oscAGain).connect(audioGain);
+    const makePreset = (presetId) => {
+      const output = audioContext.createGain();
+      output.gain.value = 0;
 
-      oscB = audioContext.createOscillator();
-      oscB.type = "triangle";
-      oscB.frequency.value = 220;
-      const oscBGain = audioContext.createGain();
-      oscBGain.gain.value = 0.15;
-      oscB.connect(oscBGain).connect(audioGain);
+      if (presetId === "rain") {
+        const noise = audioContext.createBufferSource();
+        noise.buffer = createNoiseBuffer();
+        noise.loop = true;
+        const bandpass = audioContext.createBiquadFilter();
+        bandpass.type = "bandpass";
+        bandpass.frequency.value = 1200;
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = "highpass";
+        highpass.frequency.value = 400;
+        const rainGain = audioContext.createGain();
+        rainGain.gain.value = 0.25;
+        noise.connect(bandpass).connect(highpass).connect(rainGain).connect(output);
+        noise.start();
+        return {
+          output,
+          stop: () => noise.stop(),
+        };
+      }
+
+      if (presetId === "waves") {
+        const noise = audioContext.createBufferSource();
+        noise.buffer = createNoiseBuffer();
+        noise.loop = true;
+        const lowpass = audioContext.createBiquadFilter();
+        lowpass.type = "lowpass";
+        lowpass.frequency.value = 600;
+        const lfo = audioContext.createOscillator();
+        lfo.type = "sine";
+        lfo.frequency.value = 0.12;
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = 0.4;
+        const waveGain = audioContext.createGain();
+        waveGain.gain.value = 0.3;
+        lfo.connect(lfoGain).connect(waveGain.gain);
+        noise.connect(lowpass).connect(waveGain).connect(output);
+        noise.start();
+        lfo.start();
+        return {
+          output,
+          stop: () => {
+            noise.stop();
+            lfo.stop();
+          },
+        };
+      }
+
+      if (presetId === "forest") {
+        const noise = audioContext.createBufferSource();
+        noise.buffer = createNoiseBuffer();
+        noise.loop = true;
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = "highpass";
+        highpass.frequency.value = 1200;
+        const rustleGain = audioContext.createGain();
+        rustleGain.gain.value = 0.18;
+        noise.connect(highpass).connect(rustleGain).connect(output);
+
+        const chirp = audioContext.createOscillator();
+        chirp.type = "sine";
+        chirp.frequency.value = 880;
+        const chirpGain = audioContext.createGain();
+        chirpGain.gain.value = 0;
+        chirp.connect(chirpGain).connect(output);
+
+        const chirpInterval = setInterval(() => {
+          const now = audioContext.currentTime;
+          const freq = 700 + Math.random() * 600;
+          chirp.frequency.setValueAtTime(freq, now);
+          chirpGain.gain.cancelScheduledValues(now);
+          chirpGain.gain.setValueAtTime(0, now);
+          chirpGain.gain.linearRampToValueAtTime(0.25, now + 0.05);
+          chirpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        }, 1200);
+
+        noise.start();
+        chirp.start();
+        return {
+          output,
+          stop: () => {
+            noise.stop();
+            chirp.stop();
+            clearInterval(chirpInterval);
+          },
+        };
+      }
+
+      if (presetId === "space") {
+        const noise = audioContext.createBufferSource();
+        noise.buffer = createNoiseBuffer();
+        noise.loop = true;
+        const lowpass = audioContext.createBiquadFilter();
+        lowpass.type = "lowpass";
+        lowpass.frequency.value = 300;
+        const spaceGain = audioContext.createGain();
+        spaceGain.gain.value = 0.12;
+        noise.connect(lowpass).connect(spaceGain).connect(output);
+
+        const osc = audioContext.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = 140;
+        const oscGain = audioContext.createGain();
+        oscGain.gain.value = 0.2;
+        const lfo = audioContext.createOscillator();
+        lfo.type = "sine";
+        lfo.frequency.value = 0.05;
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = 30;
+        lfo.connect(lfoGain).connect(osc.frequency);
+        osc.connect(oscGain).connect(output);
+
+        noise.start();
+        osc.start();
+        lfo.start();
+        return {
+          output,
+          stop: () => {
+            noise.stop();
+            osc.stop();
+            lfo.stop();
+          },
+        };
+      }
+
+      const osc = audioContext.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = 80;
+      const sub = audioContext.createOscillator();
+      sub.type = "triangle";
+      sub.frequency.value = 40;
+      const droneGain = audioContext.createGain();
+      droneGain.gain.value = 0.35;
+      const lfo = audioContext.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = 0.08;
+      const lfoGain = audioContext.createGain();
+      lfoGain.gain.value = 0.08;
+      lfo.connect(lfoGain).connect(droneGain.gain);
+      osc.connect(droneGain);
+      sub.connect(droneGain);
+      droneGain.connect(output);
+      osc.start();
+      sub.start();
+      lfo.start();
+      return {
+        output,
+        stop: () => {
+          osc.stop();
+          sub.stop();
+          lfo.stop();
+        },
+      };
+    };
+
+    const fadeGain = (gainNode, target, duration = 0.4) => {
+      const now = audioContext.currentTime;
+      gainNode.gain.cancelScheduledValues(now);
+      gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+      gainNode.gain.linearRampToValueAtTime(target, now + duration);
+    };
+
+    const switchPreset = (presetId, immediate = false) => {
+      if (!audioContext) {
+        return;
+      }
+      if (presetChangeTimeout) {
+        clearTimeout(presetChangeTimeout);
+        presetChangeTimeout = null;
+      }
+      const previous = activePreset;
+      const next = makePreset(presetId);
+      next.output.connect(masterGain);
+      activePreset = next;
+      if (immediate) {
+        next.output.gain.value = 1;
+      } else {
+        fadeGain(next.output, 1, 0.4);
+      }
+
+      if (previous) {
+        fadeGain(previous.output, 0, 0.4);
+        presetChangeTimeout = setTimeout(() => {
+          previous.output.disconnect();
+          previous.stop();
+        }, 450);
+      }
+    };
+
+    const createAudio = () => {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioContext.createGain();
+      masterGain.gain.value = Number(masterVolume.value) / 100;
+      masterGain.connect(audioContext.destination);
 
       mediaStreamDest = audioContext.createMediaStreamDestination();
-      audioGain.connect(mediaStreamDest);
+      masterGain.connect(mediaStreamDest);
 
-      noiseSource.start();
-      oscA.start();
-      oscB.start();
+      switchPreset(presetSelect.value, true);
 
       return audioContext;
     };
@@ -381,10 +582,10 @@
         return;
       }
       const now = audioContext.currentTime;
-      audioGain.gain.cancelScheduledValues(now);
-      audioGain.gain.setValueAtTime(audioGain.gain.value, now);
-      audioGain.gain.linearRampToValueAtTime(0.8, now + 0.4);
-      audioGain.gain.linearRampToValueAtTime(0.35, now + 1.8);
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+      masterGain.gain.linearRampToValueAtTime(0.9, now + 0.4);
+      masterGain.gain.linearRampToValueAtTime(Number(masterVolume.value) / 100, now + 1.8);
     };
 
     const startRecording = () => {
@@ -489,6 +690,7 @@
     };
 
     buildSelect();
+    buildPresetSelect();
     resizeCanvas();
     draw();
     loadSessions();
@@ -497,6 +699,12 @@
     questionSelect.addEventListener("change", (event) => updateQuestion(event.target.value));
     randomQuestion.addEventListener("click", randomizeQuestion);
     memo.addEventListener("input", updateMemo);
+    presetSelect.addEventListener("change", (event) => switchPreset(event.target.value));
+    masterVolume.addEventListener("input", () => {
+      if (masterGain) {
+        masterGain.gain.value = Number(masterVolume.value) / 100;
+      }
+    });
     audioToggle.addEventListener("click", toggleAudio);
     audioPulse.addEventListener("click", pulseAudio);
     recordStart.addEventListener("click", startRecording);
