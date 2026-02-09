@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>哲学セッション映像作品ジェネレーター</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+      background: #0e1116;
+      color: #f4f4f4;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+    .panel {
+      background: #151a21;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #c5c5c5;
+      margin-bottom: 6px;
+    }
+    select, textarea, input[type="text"], button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #283040;
+      background: #0f131a;
+      color: #f4f4f4;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+    }
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+    button {
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    button:hover {
+      background: #202635;
+      transform: translateY(-1px);
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .canvas-wrap {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    canvas {
+      width: 100%;
+      height: 420px;
+      background: #07090d;
+      border-radius: 16px;
+      border: 1px solid #1a2130;
+    }
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sessions {
+      max-height: 220px;
+      overflow-y: auto;
+      display: grid;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+    .session-item {
+      background: #0f141d;
+      border-radius: 8px;
+      padding: 8px;
+      border: 1px solid #202738;
+    }
+    .status {
+      font-size: 0.85rem;
+      color: #b0b7c3;
+    }
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    footer {
+      font-size: 0.8rem;
+      color: #9aa1ad;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .canvas-wrap {
+        grid-template-columns: 1fr;
+      }
+      canvas {
+        height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>哲学セッション映像作品ジェネレーター</h1>
+    <p class="status">問いとメモから抽象映像と環境音を生成し、録画して作品化するための1ページアプリです。</p>
+  </header>
+
+  <section class="panel controls">
+    <div>
+      <label for="questionSelect">哲学的な問い（選択）</label>
+      <select id="questionSelect"></select>
+    </div>
+    <div class="stack">
+      <label>&nbsp;</label>
+      <button id="randomQuestion">ランダムに問いを選ぶ</button>
+      <div class="status" id="questionStatus">問いはここに表示されます。</div>
+    </div>
+    <div>
+      <label for="memo">メモ</label>
+      <textarea id="memo" placeholder="感じたこと、思考の断片、音のイメージを自由に入力してください。"></textarea>
+    </div>
+  </section>
+
+  <section class="panel canvas-wrap">
+    <canvas id="visual" width="960" height="540"></canvas>
+    <div class="stack">
+      <div>
+        <label>音響セッション</label>
+        <div class="buttons">
+          <button id="audioToggle">環境音を開始</button>
+          <button id="audioPulse">一時的な揺らぎを加える</button>
+        </div>
+        <div class="status" id="audioStatus">音は停止中。ユーザー操作で開始できます。</div>
+      </div>
+      <div>
+        <label>録画</label>
+        <div class="buttons">
+          <button id="recordStart">録画開始</button>
+          <button id="recordStop" disabled>録画停止 &amp; ダウンロード</button>
+        </div>
+        <div class="status" id="recordStatus">録画は停止中。</div>
+      </div>
+      <div>
+        <label>セッション保存</label>
+        <div class="buttons">
+          <button id="saveSession">セッションを保存</button>
+          <button id="clearSessions">保存を全て削除</button>
+        </div>
+        <div class="sessions" id="sessionList"></div>
+      </div>
+      <div>
+        <label>メモのエクスポート</label>
+        <div class="buttons">
+          <button id="exportMarkdown">Markdownを書き出す</button>
+          <button id="exportJson">JSONを書き出す</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Chromeなどの最新ブラウザで index.html を開くだけで利用できます。</footer>
+
+  <script>
+    const questions = [
+      "存在はどこから始まり、どこで終わるのか？",
+      "自由意志は本当に私たちの中にあるのか？",
+      "言葉にできない感情はどのように共有できるのか？",
+      "時間は流れているのか、それとも私たちが流れているのか？",
+      "他者の経験をどこまで理解できるのか？",
+      "沈黙はコミュニケーションと言えるのか？",
+      "記憶が消えたとき、私は同じ私なのか？",
+      "観測されることで世界は変わるのか？",
+      "意味のないものに意味を与えるのは誰か？",
+      "理想と現実の境界はどこにあるのか？",
+      "身体の感覚は真実を語っているのか？",
+      "自分を知るとは何を知ることなのか？",
+      "幸福は結果か、それともプロセスか？",
+      "不確かさを抱えることは弱さなのか？",
+      "芸術は現実を写すのか、現実をつくるのか？",
+      "孤独は欠如なのか、それとも豊かさなのか？",
+      "秩序と混沌の間で私たちは何を選ぶのか？",
+      "沈黙は音の一部なのか？",
+      "境界線はどこで生まれ、どこで消えるのか？",
+      "私たちの問いは世界に影響を与えるのか？"
+    ];
+
+    const questionSelect = document.getElementById("questionSelect");
+    const questionStatus = document.getElementById("questionStatus");
+    const randomQuestion = document.getElementById("randomQuestion");
+    const memo = document.getElementById("memo");
+    const canvas = document.getElementById("visual");
+    const ctx = canvas.getContext("2d");
+    const audioToggle = document.getElementById("audioToggle");
+    const audioPulse = document.getElementById("audioPulse");
+    const audioStatus = document.getElementById("audioStatus");
+    const recordStart = document.getElementById("recordStart");
+    const recordStop = document.getElementById("recordStop");
+    const recordStatus = document.getElementById("recordStatus");
+    const saveSession = document.getElementById("saveSession");
+    const clearSessions = document.getElementById("clearSessions");
+    const sessionList = document.getElementById("sessionList");
+    const exportMarkdown = document.getElementById("exportMarkdown");
+    const exportJson = document.getElementById("exportJson");
+
+    let selectedQuestion = questions[0];
+    let memoLength = 0;
+    let typingEnergy = 0;
+    let time = 0;
+
+    let audioContext = null;
+    let audioGain = null;
+    let noiseSource = null;
+    let noiseGain = null;
+    let oscA = null;
+    let oscB = null;
+    let mediaStreamDest = null;
+
+    let recorder = null;
+    let recordedChunks = [];
+
+    const sessionsKey = "philoCinemaSessions";
+
+    const resizeCanvas = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      canvas.width = Math.round(width * devicePixelRatio);
+      canvas.height = Math.round(height * devicePixelRatio);
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    };
+
+    const buildSelect = () => {
+      questionSelect.innerHTML = "";
+      questions.forEach((question, index) => {
+        const option = document.createElement("option");
+        option.value = index;
+        option.textContent = question;
+        questionSelect.appendChild(option);
+      });
+      questionSelect.value = "0";
+      questionStatus.textContent = questions[0];
+    };
+
+    const updateQuestion = (index) => {
+      selectedQuestion = questions[index];
+      questionStatus.textContent = selectedQuestion;
+    };
+
+    const randomizeQuestion = () => {
+      const index = Math.floor(Math.random() * questions.length);
+      questionSelect.value = String(index);
+      updateQuestion(index);
+    };
+
+    const draw = () => {
+      time += 0.01 + memoLength * 0.0005;
+      typingEnergy *= 0.92;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "rgba(10, 12, 18, 0.4)";
+      ctx.fillRect(0, 0, width, height);
+
+      const baseHue = (memoLength * 3 + time * 40) % 360;
+      const pulse = Math.min(1, typingEnergy / 40);
+      const layerCount = 5 + Math.floor(memoLength / 40);
+
+      for (let i = 0; i < layerCount; i += 1) {
+        const radius = 40 + i * 30 + memoLength * 0.3;
+        const wobble = 20 + Math.sin(time * 2 + i) * 10 + pulse * 30;
+        const hue = (baseHue + i * 20 + pulse * 50) % 360;
+        ctx.strokeStyle = `hsla(${hue}, 70%, ${45 + pulse * 20}%, 0.6)`;
+        ctx.lineWidth = 1 + pulse * 2;
+        ctx.beginPath();
+        for (let angle = 0; angle <= Math.PI * 2 + 0.1; angle += 0.2) {
+          const x = width / 2 + Math.cos(angle + time * (0.5 + i * 0.05)) * (radius + Math.sin(angle * 3 + time) * wobble);
+          const y = height / 2 + Math.sin(angle + time * (0.4 + i * 0.05)) * (radius + Math.cos(angle * 2 + time) * wobble);
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = `hsla(${(baseHue + 200) % 360}, 60%, 20%, 0.5)`;
+      ctx.fillRect(0, 0, width, height);
+
+      requestAnimationFrame(draw);
+    };
+
+    const updateMemo = () => {
+      memoLength = memo.value.length;
+      typingEnergy = Math.min(80, typingEnergy + 15);
+    };
+
+    const createAudio = () => {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioGain = audioContext.createGain();
+      audioGain.gain.value = 0.4;
+      audioGain.connect(audioContext.destination);
+
+      const bufferSize = audioContext.sampleRate * 2;
+      const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i += 1) {
+        data[i] = (Math.random() * 2 - 1) * 0.6;
+      }
+      noiseSource = audioContext.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+      noiseSource.loop = true;
+      noiseGain = audioContext.createGain();
+      noiseGain.gain.value = 0.15;
+      noiseSource.connect(noiseGain).connect(audioGain);
+
+      oscA = audioContext.createOscillator();
+      oscA.type = "sine";
+      oscA.frequency.value = 110;
+      const oscAGain = audioContext.createGain();
+      oscAGain.gain.value = 0.2;
+      oscA.connect(oscAGain).connect(audioGain);
+
+      oscB = audioContext.createOscillator();
+      oscB.type = "triangle";
+      oscB.frequency.value = 220;
+      const oscBGain = audioContext.createGain();
+      oscBGain.gain.value = 0.15;
+      oscB.connect(oscBGain).connect(audioGain);
+
+      mediaStreamDest = audioContext.createMediaStreamDestination();
+      audioGain.connect(mediaStreamDest);
+
+      noiseSource.start();
+      oscA.start();
+      oscB.start();
+
+      return audioContext;
+    };
+
+    const toggleAudio = async () => {
+      if (!audioContext) {
+        createAudio();
+        audioStatus.textContent = "環境音を再生中。";
+        audioToggle.textContent = "環境音を停止";
+        return;
+      }
+      if (audioContext.state === "running") {
+        await audioContext.suspend();
+        audioStatus.textContent = "音は停止中。";
+        audioToggle.textContent = "環境音を開始";
+      } else {
+        await audioContext.resume();
+        audioStatus.textContent = "環境音を再生中。";
+        audioToggle.textContent = "環境音を停止";
+      }
+    };
+
+    const pulseAudio = () => {
+      if (!audioContext || audioContext.state !== "running") {
+        return;
+      }
+      const now = audioContext.currentTime;
+      audioGain.gain.cancelScheduledValues(now);
+      audioGain.gain.setValueAtTime(audioGain.gain.value, now);
+      audioGain.gain.linearRampToValueAtTime(0.8, now + 0.4);
+      audioGain.gain.linearRampToValueAtTime(0.35, now + 1.8);
+    };
+
+    const startRecording = () => {
+      recordedChunks = [];
+      const canvasStream = canvas.captureStream(30);
+      let combinedStream = canvasStream;
+
+      if (mediaStreamDest) {
+        const audioTracks = mediaStreamDest.stream.getAudioTracks();
+        if (audioTracks.length) {
+          combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+        }
+      }
+
+      recorder = new MediaRecorder(combinedStream, { mimeType: "video/webm" });
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `philo-session-${Date.now()}.webm`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      };
+      recorder.start();
+      recordStatus.textContent = "録画中...";
+      recordStart.disabled = true;
+      recordStop.disabled = false;
+    };
+
+    const stopRecording = () => {
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      recordStatus.textContent = "録画停止。ダウンロードを開始します。";
+      recordStart.disabled = false;
+      recordStop.disabled = true;
+    };
+
+    const loadSessions = () => {
+      const stored = JSON.parse(localStorage.getItem(sessionsKey) || "[]");
+      sessionList.innerHTML = "";
+      stored.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "session-item";
+        div.textContent = `${item.date}｜${item.question}｜${item.memo.slice(0, 40)}${item.memo.length > 40 ? "..." : ""}`;
+        sessionList.appendChild(div);
+      });
+      if (!stored.length) {
+        const empty = document.createElement("div");
+        empty.className = "status";
+        empty.textContent = "保存されたセッションはまだありません。";
+        sessionList.appendChild(empty);
+      }
+    };
+
+    const saveCurrentSession = () => {
+      const stored = JSON.parse(localStorage.getItem(sessionsKey) || "[]");
+      const entry = {
+        question: selectedQuestion,
+        memo: memo.value,
+        date: new Date().toLocaleString("ja-JP"),
+      };
+      stored.unshift(entry);
+      localStorage.setItem(sessionsKey, JSON.stringify(stored.slice(0, 40)));
+      loadSessions();
+    };
+
+    const clearAllSessions = () => {
+      localStorage.removeItem(sessionsKey);
+      loadSessions();
+    };
+
+    const downloadText = (content, filename, type) => {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const exportAsMarkdown = () => {
+      const text = memo.value;
+      const content = `# 哲学セッションメモ\n\n- 問い: ${selectedQuestion}\n- 日時: ${new Date().toLocaleString("ja-JP")}\n\n## メモ\n\n${text}\n`;
+      downloadText(content, "philo-session.md", "text/markdown");
+    };
+
+    const exportAsJson = () => {
+      const data = {
+        question: selectedQuestion,
+        memo: memo.value,
+        date: new Date().toISOString(),
+      };
+      downloadText(JSON.stringify(data, null, 2), "philo-session.json", "application/json");
+    };
+
+    buildSelect();
+    resizeCanvas();
+    draw();
+    loadSessions();
+
+    window.addEventListener("resize", resizeCanvas);
+    questionSelect.addEventListener("change", (event) => updateQuestion(event.target.value));
+    randomQuestion.addEventListener("click", randomizeQuestion);
+    memo.addEventListener("input", updateMemo);
+    audioToggle.addEventListener("click", toggleAudio);
+    audioPulse.addEventListener("click", pulseAudio);
+    recordStart.addEventListener("click", startRecording);
+    recordStop.addEventListener("click", stopRecording);
+    saveSession.addEventListener("click", saveCurrentSession);
+    clearSessions.addEventListener("click", clearAllSessions);
+    exportMarkdown.addEventListener("click", exportAsMarkdown);
+    exportJson.addEventListener("click", exportAsJson);
+  </script>
+</body>
+</html>
