@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>build: 2026-02-09-othello-v3 - オセロ</title>
+  <title>build: 2026-02-09-othello-v4 - オセロ</title>
   <style>
     :root {
       --board-green: #0b6f2b;
@@ -177,6 +177,30 @@
     .sound-controls input[type="range"] {
       width: 160px;
     }
+    .mode-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 0 0 18px;
+      background: #ffffff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    }
+    .mode-controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    .mode-controls select {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(0, 0, 0, 0.2);
+      background: #ffffff;
+    }
     .last-move-display {
       margin-top: 8px;
       text-align: center;
@@ -220,7 +244,7 @@
 </head>
 <body>
   <div class="container">
-    <div class="build-label">build: 2026-02-09-othello-v3</div>
+    <div class="build-label">build: 2026-02-09-othello-v4</div>
     <h1>白黒オセロ</h1>
 
     <div class="sound-controls">
@@ -233,6 +257,24 @@
         <input type="range" id="volume-slider" min="0" max="100" value="60" />
       </label>
       <span class="subtext">操作後に音声を初期化します</span>
+    </div>
+
+    <div class="mode-controls">
+      <label>
+        対戦モード
+        <select id="mode-select">
+          <option value="human">人間 vs 人間</option>
+          <option value="cpu" selected>人間 vs CPU</option>
+        </select>
+      </label>
+      <label>
+        CPU担当
+        <select id="cpu-color-select">
+          <option value="white" selected>白</option>
+          <option value="black">黒</option>
+        </select>
+      </label>
+      <span class="subtext">CPUは手番で自動着手します</span>
     </div>
 
     <section class="status-panel">
@@ -274,6 +316,8 @@
     const soundToggle = document.getElementById("sound-toggle");
     const volumeSlider = document.getElementById("volume-slider");
     const lastMoveDisplay = document.getElementById("last-move");
+    const modeSelect = document.getElementById("mode-select");
+    const cpuColorSelect = document.getElementById("cpu-color-select");
 
     let board = [];
     let currentPlayer = BLACK;
@@ -283,6 +327,10 @@
     let lastMoveKey = "";
     let lastMoveLabel = "-";
     let audioContext = null;
+    let gameMode = "cpu";
+    let cpuColor = WHITE;
+    let cpuThinking = false;
+    let cpuTimer = null;
 
     const directions = [
       [-1, -1],
@@ -411,7 +459,7 @@
           const isValid = currentValidMoves.has(`${row},${col}`);
           if (!gameOver && isValid) {
             cell.classList.add("valid");
-            cell.disabled = false;
+            cell.disabled = cpuThinking;
           } else {
             cell.disabled = true;
           }
@@ -474,6 +522,75 @@
       }, duration);
     }
 
+    function setCpuThinking(isThinking) {
+      cpuThinking = isThinking;
+      if (cpuThinking) {
+        stateDisplay.textContent = "CPU思考中";
+      }
+      renderBoard();
+    }
+
+    function chooseCpuMove() {
+      let bestMove = null;
+      let bestFlips = -1;
+      for (const [key, flips] of currentValidMoves.entries()) {
+        if (flips.length > bestFlips) {
+          bestFlips = flips.length;
+          bestMove = key;
+        }
+      }
+      return bestMove;
+    }
+
+    function scheduleCpuMove() {
+      if (gameMode !== "cpu") {
+        return;
+      }
+      if (gameOver || currentPlayer !== cpuColor || currentValidMoves.size === 0) {
+        return;
+      }
+      if (cpuTimer) {
+        clearTimeout(cpuTimer);
+      }
+      setCpuThinking(true);
+      const delay = 500 + Math.floor(Math.random() * 401);
+      cpuTimer = setTimeout(() => {
+        if (gameOver || currentPlayer !== cpuColor) {
+          setCpuThinking(false);
+          return;
+        }
+        const chosenKey = chooseCpuMove();
+        if (!chosenKey) {
+          setCpuThinking(false);
+          return;
+        }
+        const [row, col] = chosenKey.split(",").map(Number);
+        setCpuThinking(false);
+        performMove(row, col);
+      }, delay);
+    }
+
+    function performMove(row, col) {
+      const key = `${row},${col}`;
+      if (!currentValidMoves.has(key)) {
+        return;
+      }
+      const flips = currentValidMoves.get(key);
+      applyMove(row, col, flips, currentPlayer);
+      lastMoveKey = key;
+      lastMoveLabel = `${String.fromCharCode(65 + Number(col))}${Number(row) + 1}`;
+      const placedCell = cellButtons[row][col];
+      animateCell(placedCell, "place-pop", 220);
+      playMoveSound();
+      flips.forEach(([flipRow, flipCol]) => {
+        const flipCell = cellButtons[flipRow][flipCol];
+        animateCell(flipCell, "flip-anim", 380);
+        playFlipSound();
+      });
+      const nextPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+      setTurn(nextPlayer, "");
+    }
+
     function setTurn(player, message = "") {
       currentPlayer = player;
       currentValidMoves = calculateValidMoves(player);
@@ -493,37 +610,28 @@
         playPassSound();
         updateStatus(`${playerName(player)}は置ける手がありません。${playerName(other)}の番です。`);
         renderBoard();
+        scheduleCpuMove();
         return;
       }
 
       updateStatus(message);
       renderBoard();
+      scheduleCpuMove();
     }
 
     function handleCellClick(event) {
       if (gameOver) {
         return;
       }
-      initAudioContext();
-      const { row, col } = event.currentTarget.dataset;
-      const key = `${row},${col}`;
-      if (!currentValidMoves.has(key)) {
+      if (cpuThinking) {
         return;
       }
-      const flips = currentValidMoves.get(key);
-      applyMove(Number(row), Number(col), flips, currentPlayer);
-      lastMoveKey = key;
-      lastMoveLabel = `${String.fromCharCode(65 + Number(col))}${Number(row) + 1}`;
-      const nextPlayer = currentPlayer === BLACK ? WHITE : BLACK;
-      const placedCell = cellButtons[Number(row)][Number(col)];
-      animateCell(placedCell, "place-pop", 220);
-      playMoveSound();
-      flips.forEach(([flipRow, flipCol]) => {
-        const flipCell = cellButtons[flipRow][flipCol];
-        animateCell(flipCell, "flip-anim", 380);
-        playFlipSound();
-      });
-      setTurn(nextPlayer, "");
+      if (gameMode === "cpu" && currentPlayer === cpuColor) {
+        return;
+      }
+      initAudioContext();
+      const { row, col } = event.currentTarget.dataset;
+      performMove(Number(row), Number(col));
     }
 
     function buildBoardUI() {
@@ -546,6 +654,11 @@
     }
 
     function restartGame() {
+      if (cpuTimer) {
+        clearTimeout(cpuTimer);
+        cpuTimer = null;
+      }
+      cpuThinking = false;
       gameOver = false;
       lastMoveKey = "";
       lastMoveLabel = "-";
@@ -556,7 +669,17 @@
     restartButton.addEventListener("click", restartGame);
     soundToggle.addEventListener("change", initAudioContext);
     volumeSlider.addEventListener("input", initAudioContext);
+    modeSelect.addEventListener("change", () => {
+      gameMode = modeSelect.value;
+      cpuColorSelect.disabled = gameMode !== "cpu";
+      restartGame();
+    });
+    cpuColorSelect.addEventListener("change", () => {
+      cpuColor = cpuColorSelect.value === "black" ? BLACK : WHITE;
+      restartGame();
+    });
 
+    cpuColorSelect.disabled = gameMode !== "cpu";
     buildBoardUI();
     restartGame();
   </script>
