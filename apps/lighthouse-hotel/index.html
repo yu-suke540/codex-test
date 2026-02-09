@@ -6,14 +6,15 @@
   <title>灯台ホテルの来客名簿</title>
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #0f131a;
-      --panel: #1a2130;
+      color-scheme: dark;
+      --bg: #0b0f16;
+      --panel: rgba(16, 20, 28, 0.85);
       --text: #e6edf3;
       --accent: #f4c95d;
       --muted: #9aa7b3;
-      --button: #263145;
-      --button-hover: #32425e;
+      --button: rgba(30, 40, 60, 0.85);
+      --button-hover: rgba(46, 63, 90, 0.95);
+      --glow: rgba(244, 201, 93, 0.4);
     }
 
     * {
@@ -23,23 +24,93 @@
     body {
       margin: 0;
       font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
-      background: var(--bg);
       color: var(--text);
+      min-height: 100vh;
       display: flex;
       justify-content: center;
-      min-height: 100vh;
-      padding: 24px;
+      padding: 32px 24px;
+      background: radial-gradient(circle at top, #1b2638 0%, #0b0f16 45%, #06080c 100%);
+      overflow: hidden;
+    }
+
+    .atmosphere,
+    .atmosphere::before,
+    .atmosphere::after {
+      position: absolute;
+      inset: -40% -20% 0 -20%;
+      content: "";
+      pointer-events: none;
+    }
+
+    .atmosphere {
+      z-index: 0;
+      background: linear-gradient(180deg, rgba(28, 36, 50, 0.7) 0%, rgba(7, 9, 14, 0.9) 60%);
+    }
+
+    .atmosphere::before {
+      background-image: linear-gradient(120deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 60%);
+      filter: blur(20px);
+      animation: fogMove 18s ease-in-out infinite;
+      opacity: 0.6;
+    }
+
+    .atmosphere::after {
+      background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 55%);
+      filter: blur(18px);
+      animation: fogMove 26s ease-in-out infinite reverse;
+      opacity: 0.35;
+    }
+
+    .rain {
+      position: absolute;
+      inset: -20% -50% 0 -50%;
+      background-image: repeating-linear-gradient(
+        120deg,
+        rgba(200, 220, 255, 0.08) 0,
+        rgba(200, 220, 255, 0.08) 1px,
+        rgba(200, 220, 255, 0) 1px,
+        rgba(200, 220, 255, 0) 6px
+      );
+      animation: rainMove 1.4s linear infinite;
+      opacity: 0.4;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    @keyframes fogMove {
+      0% {
+        transform: translate3d(-5%, -2%, 0);
+      }
+      50% {
+        transform: translate3d(5%, 2%, 0);
+      }
+      100% {
+        transform: translate3d(-5%, -2%, 0);
+      }
+    }
+
+    @keyframes rainMove {
+      0% {
+        transform: translateY(-10%);
+      }
+      100% {
+        transform: translateY(10%);
+      }
     }
 
     .app {
-      width: min(900px, 100%);
+      position: relative;
+      z-index: 1;
+      width: min(960px, 100%);
       background: var(--panel);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 24px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(6px);
     }
 
     header {
@@ -51,28 +122,46 @@
     }
 
     h1 {
-      font-size: 1.6rem;
+      font-size: 1.7rem;
       margin: 0;
       color: var(--accent);
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
+      text-shadow: 0 0 12px var(--glow);
     }
 
     .progress {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       color: var(--muted);
     }
 
     .story {
       font-size: 1.05rem;
       line-height: 1.9;
-      background: rgba(0, 0, 0, 0.25);
-      padding: 18px;
+      background: rgba(4, 8, 14, 0.65);
+      padding: 20px;
       border-radius: 12px;
-      min-height: 180px;
+      min-height: 200px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .story p {
       margin: 0 0 12px;
+    }
+
+    .typewriter-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      background: var(--accent);
+      margin-left: 2px;
+      animation: blink 0.8s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
     }
 
     .choices {
@@ -99,16 +188,65 @@
       border-color: var(--accent);
     }
 
-    .controls {
+    button.choice:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .controls,
+    .settings {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
+      align-items: center;
+    }
+
+    .settings {
+      background: rgba(7, 10, 16, 0.6);
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .setting {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-width: 160px;
+    }
+
+    .setting input[type="range"],
+    .setting select {
+      width: 100%;
+      accent-color: var(--accent);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .setting label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toggle input {
+      accent-color: var(--accent);
     }
 
     .log {
-      background: rgba(0, 0, 0, 0.25);
+      background: rgba(6, 9, 14, 0.55);
       border-radius: 12px;
       padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
     }
 
     .log h2 {
@@ -131,9 +269,10 @@
       padding: 12px;
       border-radius: 12px;
       background: rgba(244, 201, 93, 0.12);
+      margin-top: 6px;
     }
 
-    @media (max-width: 600px) {
+    @media (max-width: 700px) {
       .app {
         padding: 18px;
       }
@@ -142,10 +281,16 @@
       button.control {
         font-size: 0.94rem;
       }
+
+      .setting {
+        min-width: 140px;
+      }
     }
   </style>
 </head>
 <body>
+  <div class="atmosphere"></div>
+  <div class="rain"></div>
   <main class="app">
     <header>
       <h1>灯台ホテルの来客名簿</h1>
@@ -153,6 +298,39 @@
     </header>
     <section class="story" id="story"></section>
     <section class="choices" id="choices"></section>
+    <section class="settings">
+      <div class="setting">
+        <label for="speed">タイプ速度 <span id="speedValue">中</span></label>
+        <input id="speed" type="range" min="20" max="120" value="60" />
+      </div>
+      <div class="setting">
+        <label for="autoToggle">オート進行</label>
+        <div class="toggle">
+          <input id="autoToggle" type="checkbox" />
+          <span>ON</span>
+        </div>
+      </div>
+      <div class="setting">
+        <label for="skip">表示</label>
+        <button class="control" id="skip">スキップ</button>
+      </div>
+      <div class="setting">
+        <label for="audioToggle">音</label>
+        <button class="control" id="audioToggle">音を開始</button>
+      </div>
+      <div class="setting">
+        <label for="soundPreset">環境音</label>
+        <select id="soundPreset">
+          <option value="rain">雨</option>
+          <option value="wind">風</option>
+          <option value="drone">低音ドローン</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label for="volume">音量 <span id="volumeValue">60%</span></label>
+        <input id="volume" type="range" min="0" max="100" value="60" />
+      </div>
+    </section>
     <section class="controls">
       <button class="control" id="save">セーブ</button>
       <button class="control" id="load">ロード</button>
@@ -167,6 +345,7 @@
   <script>
     const storageKey = "lighthouse-hotel-save";
     const maxLogEntries = 5;
+    const autoDelayMs = 2200;
 
     const storyData = {
       start: {
@@ -337,7 +516,15 @@
       log: document.getElementById("log"),
       save: document.getElementById("save"),
       load: document.getElementById("load"),
-      restart: document.getElementById("restart")
+      restart: document.getElementById("restart"),
+      speed: document.getElementById("speed"),
+      speedValue: document.getElementById("speedValue"),
+      skip: document.getElementById("skip"),
+      autoToggle: document.getElementById("autoToggle"),
+      audioToggle: document.getElementById("audioToggle"),
+      soundPreset: document.getElementById("soundPreset"),
+      volume: document.getElementById("volume"),
+      volumeValue: document.getElementById("volumeValue")
     };
 
     let currentSceneId = "start";
@@ -348,6 +535,18 @@
       trustedGuest: false
     };
     let backlog = [];
+    let typingToken = 0;
+    let typingDone = true;
+    let pendingAutoAdvance = null;
+    let audioContext = null;
+    let masterGain = null;
+    let ambienceNodes = null;
+
+    const speedLabel = (value) => {
+      if (value <= 40) return "遅い";
+      if (value <= 80) return "中";
+      return "速い";
+    };
 
     const updateProgress = (sceneId) => {
       const scene = storyData[sceneId];
@@ -355,19 +554,10 @@
       elements.progress.textContent = `${scene.chapter} / シーン ${index}`;
     };
 
-    const renderStory = (scene) => {
-      elements.story.innerHTML = "";
-      scene.text.forEach((paragraph) => {
-        const p = document.createElement("p");
-        p.textContent = paragraph;
-        elements.story.appendChild(p);
-      });
-
-      if (scene.ending) {
-        const endingTag = document.createElement("div");
-        endingTag.className = "ending";
-        endingTag.textContent = `エンディング: ${scene.ending}`;
-        elements.story.appendChild(endingTag);
+    const clearAutoAdvance = () => {
+      if (pendingAutoAdvance) {
+        clearTimeout(pendingAutoAdvance);
+        pendingAutoAdvance = null;
       }
     };
 
@@ -388,6 +578,13 @@
       state = { ...state, ...effects };
     };
 
+    const disableChoices = (disabled) => {
+      const buttons = elements.choices.querySelectorAll("button.choice");
+      buttons.forEach((button) => {
+        button.disabled = disabled;
+      });
+    };
+
     const renderChoices = (scene) => {
       elements.choices.innerHTML = "";
       const available = scene.choices.filter((choice) =>
@@ -398,7 +595,9 @@
         const button = document.createElement("button");
         button.className = "choice";
         button.textContent = choice.label;
+        button.disabled = !typingDone;
         button.addEventListener("click", () => {
+          playBlip(260, 0.12);
           if (choice.restart) {
             state = {
               gotSpareKey: false,
@@ -413,15 +612,110 @@
         });
         elements.choices.appendChild(button);
       });
+
+      return available.length;
+    };
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const typeParagraph = async (paragraph, container, token) => {
+      const span = document.createElement("span");
+      container.appendChild(span);
+      for (let i = 0; i < paragraph.length; i += 1) {
+        if (token !== typingToken) return;
+        span.textContent += paragraph[i];
+        await wait(Number(elements.speed.value));
+      }
+    };
+
+    const renderStory = async (scene) => {
+      typingToken += 1;
+      const token = typingToken;
+      typingDone = false;
+      elements.story.innerHTML = "";
+      clearAutoAdvance();
+      const cursor = document.createElement("span");
+      cursor.className = "typewriter-cursor";
+
+      for (const paragraph of scene.text) {
+        if (token !== typingToken) return;
+        const p = document.createElement("p");
+        elements.story.appendChild(p);
+        await typeParagraph(paragraph, p, token);
+        elements.story.appendChild(cursor);
+      }
+
+      if (scene.ending) {
+        const endingTag = document.createElement("div");
+        endingTag.className = "ending";
+        endingTag.textContent = `エンディング: ${scene.ending}`;
+        elements.story.appendChild(endingTag);
+      }
+
+      if (token !== typingToken) return;
+      typingDone = true;
+      cursor.remove();
+      disableChoices(false);
+      scheduleAutoAdvance(scene);
+    };
+
+    const updateCursor = (active) => {
+      const existing = elements.story.querySelector(".typewriter-cursor");
+      if (active && !existing) {
+        const cursor = document.createElement("span");
+        cursor.className = "typewriter-cursor";
+        elements.story.appendChild(cursor);
+      }
+      if (!active && existing) {
+        existing.remove();
+      }
+    };
+
+    const skipTyping = () => {
+      if (typingDone) return;
+      typingToken += 1;
+      typingDone = true;
+      const scene = storyData[currentSceneId];
+      elements.story.innerHTML = "";
+      scene.text.forEach((paragraph) => {
+        const p = document.createElement("p");
+        p.textContent = paragraph;
+        elements.story.appendChild(p);
+      });
+      if (scene.ending) {
+        const endingTag = document.createElement("div");
+        endingTag.className = "ending";
+        endingTag.textContent = `エンディング: ${scene.ending}`;
+        elements.story.appendChild(endingTag);
+      }
+      updateCursor(false);
+      disableChoices(false);
+      scheduleAutoAdvance(scene);
+    };
+
+    const scheduleAutoAdvance = (scene) => {
+      clearAutoAdvance();
+      if (!elements.autoToggle.checked) return;
+      const available = scene.choices.filter((choice) =>
+        typeof choice.condition === "function" ? choice.condition(state) : true
+      );
+      if (available.length !== 1) return;
+      pendingAutoAdvance = setTimeout(() => {
+        applyEffects(available[0].effects);
+        playBlip(220, 0.1);
+        goToScene(available[0].next);
+      }, autoDelayMs);
     };
 
     const goToScene = (sceneId) => {
       currentSceneId = sceneId;
       const scene = storyData[sceneId];
       updateProgress(sceneId);
-      renderStory(scene);
       updateLog(scene);
+      disableChoices(true);
+      renderStory(scene);
       renderChoices(scene);
+      playBlip(320, 0.08);
     };
 
     const saveGame = () => {
@@ -463,10 +757,132 @@
       goToScene("start");
     };
 
+    const updateSpeedLabel = () => {
+      const value = Number(elements.speed.value);
+      elements.speedValue.textContent = speedLabel(value);
+    };
+
+    const updateVolumeLabel = () => {
+      elements.volumeValue.textContent = `${elements.volume.value}%`;
+    };
+
+    const setMasterVolume = () => {
+      if (!masterGain) return;
+      masterGain.gain.value = Number(elements.volume.value) / 100;
+    };
+
+    const createNoiseBuffer = (context) => {
+      const bufferSize = context.sampleRate * 2;
+      const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i += 1) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+    };
+
+    const createRain = (context) => {
+      const source = context.createBufferSource();
+      source.buffer = createNoiseBuffer(context);
+      source.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.value = 600;
+      const gain = context.createGain();
+      gain.gain.value = 0.35;
+      source.connect(filter).connect(gain);
+      return { source, gain };
+    };
+
+    const createWind = (context) => {
+      const source = context.createBufferSource();
+      source.buffer = createNoiseBuffer(context);
+      source.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 420;
+      const gain = context.createGain();
+      gain.gain.value = 0.35;
+      source.connect(filter).connect(gain);
+      return { source, gain };
+    };
+
+    const createDrone = (context) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 54;
+      const gain = context.createGain();
+      gain.gain.value = 0.45;
+      oscillator.connect(gain);
+      return { source: oscillator, gain };
+    };
+
+    const startAudio = async () => {
+      if (audioContext) {
+        await audioContext.resume();
+        return;
+      }
+      audioContext = new AudioContext();
+      masterGain = audioContext.createGain();
+      masterGain.connect(audioContext.destination);
+      ambienceNodes = {
+        rain: createRain(audioContext),
+        wind: createWind(audioContext),
+        drone: createDrone(audioContext)
+      };
+      Object.values(ambienceNodes).forEach((node) => {
+        node.gain.connect(masterGain);
+        node.source.start();
+      });
+      setPreset(elements.soundPreset.value);
+      setMasterVolume();
+    };
+
+    const setPreset = (preset) => {
+      if (!ambienceNodes) return;
+      Object.entries(ambienceNodes).forEach(([key, node]) => {
+        node.gain.gain.value = key === preset ? 0.5 : 0.02;
+      });
+    };
+
+    const playBlip = (frequency, duration) => {
+      if (!audioContext) return;
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.18;
+      oscillator.connect(gain).connect(masterGain);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + duration);
+    };
+
     elements.save.addEventListener("click", saveGame);
     elements.load.addEventListener("click", loadGame);
     elements.restart.addEventListener("click", restartGame);
+    elements.speed.addEventListener("input", updateSpeedLabel);
+    elements.skip.addEventListener("click", skipTyping);
+    elements.autoToggle.addEventListener("change", () => {
+      if (typingDone) {
+        scheduleAutoAdvance(storyData[currentSceneId]);
+      }
+    });
+    elements.audioToggle.addEventListener("click", async () => {
+      await startAudio();
+      elements.audioToggle.textContent = "音を再開";
+      playBlip(440, 0.12);
+    });
+    elements.soundPreset.addEventListener("change", (event) => {
+      setPreset(event.target.value);
+      playBlip(300, 0.1);
+    });
+    elements.volume.addEventListener("input", () => {
+      updateVolumeLabel();
+      setMasterVolume();
+    });
 
+    updateSpeedLabel();
+    updateVolumeLabel();
     goToScene(currentSceneId);
   </script>
 </body>
