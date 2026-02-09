@@ -3,13 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>build: 2026-02-09-othello-v2 - オセロ</title>
+  <title>build: 2026-02-09-othello-v3 - オセロ</title>
   <style>
     :root {
       --board-green: #0b6f2b;
       --board-dark: #084c1d;
       --accent: #7fdcff;
       --text: #1a1a1a;
+      --stone-shadow: rgba(0, 0, 0, 0.35);
     }
     * {
       box-sizing: border-box;
@@ -33,6 +34,10 @@
       border: 3px solid #000000;
       padding: 12px 16px;
       margin-bottom: 16px;
+    }
+    .subtext {
+      font-size: 14px;
+      color: #4b4b4b;
     }
     h1 {
       text-align: center;
@@ -63,16 +68,16 @@
       display: grid;
       grid-template-columns: repeat(8, minmax(40px, 1fr));
       gap: 6px;
-      background: var(--board-dark);
+      background: linear-gradient(145deg, #0f7a35, #0a5e27);
       padding: 12px;
       border-radius: 12px;
-      box-shadow: inset 0 0 0 4px #063615;
+      box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.08), 0 12px 24px rgba(0, 0, 0, 0.18);
     }
     .cell {
       position: relative;
-      background: var(--board-green);
-      border: none;
-      border-radius: 8px;
+      background: radial-gradient(circle at 30% 30%, #12833a, var(--board-green));
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      border-radius: 10px;
       width: 100%;
       aspect-ratio: 1 / 1;
       cursor: pointer;
@@ -95,6 +100,11 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
+      animation: validPulse 1.4s ease-in-out infinite;
+    }
+    .cell.last-move {
+      outline: 3px solid rgba(255, 255, 255, 0.75);
+      outline-offset: -3px;
     }
     .cell.black::before,
     .cell.white::before {
@@ -106,13 +116,20 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.15);
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08), 0 4px 8px var(--stone-shadow);
+      backface-visibility: hidden;
     }
     .cell.black::before {
-      background: #111111;
+      background: radial-gradient(circle at 30% 30%, #4a4a4a, #0b0b0b 60%, #000000 100%);
     }
     .cell.white::before {
-      background: #f8f8f8;
+      background: radial-gradient(circle at 30% 30%, #ffffff, #e6e6e6 55%, #cfcfcf 100%);
+    }
+    .cell.place-pop {
+      animation: placePop 0.18s ease-out;
+    }
+    .cell.flip-anim::before {
+      animation: flipSpin 0.36s ease-in-out;
     }
     .controls {
       display: flex;
@@ -139,12 +156,84 @@
       min-height: 24px;
       text-align: center;
     }
+    .sound-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 12px 0 18px;
+      background: #ffffff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    }
+    .sound-controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    .sound-controls input[type="range"] {
+      width: 160px;
+    }
+    .last-move-display {
+      margin-top: 8px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    @keyframes validPulse {
+      0%,
+      100% {
+        opacity: 0.7;
+        transform: translate(-50%, -50%) scale(0.95);
+      }
+      50% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.05);
+      }
+    }
+    @keyframes placePop {
+      0% {
+        transform: scale(0.85);
+      }
+      70% {
+        transform: scale(1.08);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+    @keyframes flipSpin {
+      0% {
+        transform: translate(-50%, -50%) rotateY(0deg);
+      }
+      50% {
+        transform: translate(-50%, -50%) rotateY(90deg);
+      }
+      100% {
+        transform: translate(-50%, -50%) rotateY(180deg);
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="build-label">build: 2026-02-09-othello-v2</div>
+    <div class="build-label">build: 2026-02-09-othello-v3</div>
     <h1>白黒オセロ</h1>
+
+    <div class="sound-controls">
+      <label>
+        <input type="checkbox" id="sound-toggle" checked />
+        効果音
+      </label>
+      <label>
+        音量
+        <input type="range" id="volume-slider" min="0" max="100" value="60" />
+      </label>
+      <span class="subtext">操作後に音声を初期化します</span>
+    </div>
 
     <section class="status-panel">
       <div class="status-box">
@@ -162,6 +251,7 @@
     </section>
 
     <div id="board" class="board" aria-label="オセロ盤"></div>
+    <div class="last-move-display" id="last-move">直前の手: -</div>
 
     <div class="controls">
       <button class="restart" id="restart-button" type="button">リスタート</button>
@@ -181,12 +271,18 @@
     const stateDisplay = document.getElementById("state-display");
     const messageElement = document.getElementById("message");
     const restartButton = document.getElementById("restart-button");
+    const soundToggle = document.getElementById("sound-toggle");
+    const volumeSlider = document.getElementById("volume-slider");
+    const lastMoveDisplay = document.getElementById("last-move");
 
     let board = [];
     let currentPlayer = BLACK;
     let currentValidMoves = new Map();
     let gameOver = false;
     let cellButtons = [];
+    let lastMoveKey = "";
+    let lastMoveLabel = "-";
+    let audioContext = null;
 
     const directions = [
       [-1, -1],
@@ -282,6 +378,7 @@
     function updateStatus(message) {
       const { black, white } = countDiscs();
       scoreDisplay.textContent = `黒 ${black} / 白 ${white}`;
+      lastMoveDisplay.textContent = `直前の手: ${lastMoveLabel}`;
 
       if (gameOver) {
         let result = "引き分け";
@@ -304,7 +401,7 @@
       for (let row = 0; row < SIZE; row += 1) {
         for (let col = 0; col < SIZE; col += 1) {
           const cell = cellButtons[row][col];
-          cell.classList.remove("black", "white", "valid");
+          cell.classList.remove("black", "white", "valid", "last-move");
           const value = board[row][col];
           if (value === BLACK) {
             cell.classList.add("black");
@@ -318,8 +415,63 @@
           } else {
             cell.disabled = true;
           }
+          if (lastMoveKey === `${row},${col}`) {
+            cell.classList.add("last-move");
+          }
         }
       }
+    }
+
+    function initAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+    }
+
+    function playTone({ frequency, duration, volume = 1, type = "sine" }) {
+      if (!soundToggle.checked) {
+        return;
+      }
+      initAudioContext();
+      const gainNode = audioContext.createGain();
+      const oscillator = audioContext.createOscillator();
+      const baseVolume = Number(volumeSlider.value) / 100;
+      oscillator.type = type;
+      oscillator.frequency.value = frequency;
+      gainNode.gain.value = baseVolume * volume;
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      const now = audioContext.currentTime;
+      gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      oscillator.start(now);
+      oscillator.stop(now + duration);
+    }
+
+    function playMoveSound() {
+      playTone({ frequency: 520, duration: 0.08, volume: 0.8, type: "triangle" });
+    }
+
+    function playFlipSound() {
+      playTone({ frequency: 360, duration: 0.06, volume: 0.35, type: "sine" });
+    }
+
+    function playPassSound() {
+      playTone({ frequency: 240, duration: 0.2, volume: 0.4, type: "sine" });
+    }
+
+    function playGameOverSound() {
+      playTone({ frequency: 140, duration: 0.3, volume: 0.6, type: "triangle" });
+    }
+
+    function animateCell(cell, className, duration = 300) {
+      cell.classList.add(className);
+      setTimeout(() => {
+        cell.classList.remove(className);
+      }, duration);
     }
 
     function setTurn(player, message = "") {
@@ -331,12 +483,14 @@
         if (otherMoves.size === 0) {
           gameOver = true;
           currentValidMoves = new Map();
+          playGameOverSound();
           updateStatus("両者とも置ける手がありません。ゲーム終了です。");
           renderBoard();
           return;
         }
         currentPlayer = other;
         currentValidMoves = otherMoves;
+        playPassSound();
         updateStatus(`${playerName(player)}は置ける手がありません。${playerName(other)}の番です。`);
         renderBoard();
         return;
@@ -350,6 +504,7 @@
       if (gameOver) {
         return;
       }
+      initAudioContext();
       const { row, col } = event.currentTarget.dataset;
       const key = `${row},${col}`;
       if (!currentValidMoves.has(key)) {
@@ -357,7 +512,17 @@
       }
       const flips = currentValidMoves.get(key);
       applyMove(Number(row), Number(col), flips, currentPlayer);
+      lastMoveKey = key;
+      lastMoveLabel = `${String.fromCharCode(65 + Number(col))}${Number(row) + 1}`;
       const nextPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+      const placedCell = cellButtons[Number(row)][Number(col)];
+      animateCell(placedCell, "place-pop", 220);
+      playMoveSound();
+      flips.forEach(([flipRow, flipCol]) => {
+        const flipCell = cellButtons[flipRow][flipCol];
+        animateCell(flipCell, "flip-anim", 380);
+        playFlipSound();
+      });
       setTurn(nextPlayer, "");
     }
 
@@ -382,11 +547,15 @@
 
     function restartGame() {
       gameOver = false;
+      lastMoveKey = "";
+      lastMoveLabel = "-";
       initializeBoard();
       setTurn(BLACK, "ゲーム開始！黒の番です。");
     }
 
     restartButton.addEventListener("click", restartGame);
+    soundToggle.addEventListener("change", initAudioContext);
+    volumeSlider.addEventListener("input", initAudioContext);
 
     buildBoardUI();
     restartGame();
