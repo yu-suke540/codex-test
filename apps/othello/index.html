@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>build: 2026-02-09-othello-v4 - オセロ</title>
+  <title>build: 2026-02-09-othello-v5 - オセロ</title>
   <style>
     :root {
       --board-green: #0b6f2b;
@@ -201,6 +201,20 @@
       border: 1px solid rgba(0, 0, 0, 0.2);
       background: #ffffff;
     }
+    .mode-controls input[type="range"] {
+      width: 180px;
+    }
+    .mode-controls button {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 0, 0, 0.2);
+      background: #f0f0f0;
+      cursor: pointer;
+    }
+    .mode-controls button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
     .last-move-display {
       margin-top: 8px;
       text-align: center;
@@ -244,7 +258,7 @@
 </head>
 <body>
   <div class="container">
-    <div class="build-label">build: 2026-02-09-othello-v4</div>
+    <div class="build-label">build: 2026-02-09-othello-v5</div>
     <h1>白黒オセロ</h1>
 
     <div class="sound-controls">
@@ -265,15 +279,28 @@
         <select id="mode-select">
           <option value="human">人間 vs 人間</option>
           <option value="cpu" selected>人間 vs CPU</option>
+          <option value="cpu-cpu">CPU vs CPU</option>
         </select>
       </label>
       <label>
-        CPU担当
-        <select id="cpu-color-select">
-          <option value="white" selected>白</option>
-          <option value="black">黒</option>
+        CPU担当（黒）
+        <select id="cpu-black-select">
+          <option value="human" selected>人間</option>
+          <option value="cpu">CPU</option>
         </select>
       </label>
+      <label>
+        CPU担当（白）
+        <select id="cpu-white-select">
+          <option value="human">人間</option>
+          <option value="cpu" selected>CPU</option>
+        </select>
+      </label>
+      <label>
+        自動対局速度
+        <input type="range" id="cpu-speed" min="100" max="1200" value="700" />
+      </label>
+      <button type="button" id="cpu-toggle">一時停止</button>
       <span class="subtext">CPUは手番で自動着手します</span>
     </div>
 
@@ -317,7 +344,10 @@
     const volumeSlider = document.getElementById("volume-slider");
     const lastMoveDisplay = document.getElementById("last-move");
     const modeSelect = document.getElementById("mode-select");
-    const cpuColorSelect = document.getElementById("cpu-color-select");
+    const cpuBlackSelect = document.getElementById("cpu-black-select");
+    const cpuWhiteSelect = document.getElementById("cpu-white-select");
+    const cpuSpeedSlider = document.getElementById("cpu-speed");
+    const cpuToggleButton = document.getElementById("cpu-toggle");
 
     let board = [];
     let currentPlayer = BLACK;
@@ -328,7 +358,9 @@
     let lastMoveLabel = "-";
     let audioContext = null;
     let gameMode = "cpu";
-    let cpuColor = WHITE;
+    let cpuPlaysBlack = false;
+    let cpuPlaysWhite = true;
+    let cpuPaused = false;
     let cpuThinking = false;
     let cpuTimer = null;
 
@@ -439,7 +471,13 @@
         stateDisplay.textContent = `ゲーム終了 (${result})`;
       } else {
         turnDisplay.textContent = playerName(currentPlayer);
-        stateDisplay.textContent = "対局中";
+        if (cpuPaused && gameMode === "cpu-cpu") {
+          stateDisplay.textContent = "一時停止中";
+        } else if (cpuThinking) {
+          stateDisplay.textContent = "CPU思考中";
+        } else {
+          stateDisplay.textContent = "対局中";
+        }
       }
 
       messageElement.textContent = message || "";
@@ -530,12 +568,120 @@
       renderBoard();
     }
 
+    function isCpuPlayer(player) {
+      return (player === BLACK && cpuPlaysBlack) || (player === WHITE && cpuPlaysWhite);
+    }
+
+    function cloneBoard(sourceBoard) {
+      return sourceBoard.map((row) => row.slice());
+    }
+
+    function getFlipsOnBoard(sourceBoard, row, col, player) {
+      if (sourceBoard[row][col] !== EMPTY) {
+        return [];
+      }
+      const opponent = player === BLACK ? WHITE : BLACK;
+      const flips = [];
+      for (const [dx, dy] of directions) {
+        let r = row + dx;
+        let c = col + dy;
+        const line = [];
+        while (inBounds(r, c) && sourceBoard[r][c] === opponent) {
+          line.push([r, c]);
+          r += dx;
+          c += dy;
+        }
+        if (line.length > 0 && inBounds(r, c) && sourceBoard[r][c] === player) {
+          flips.push(...line);
+        }
+      }
+      return flips;
+    }
+
+    function getValidMovesForBoard(sourceBoard, player) {
+      const moves = new Map();
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let col = 0; col < SIZE; col += 1) {
+          const flips = getFlipsOnBoard(sourceBoard, row, col, player);
+          if (flips.length > 0) {
+            moves.set(`${row},${col}`, flips);
+          }
+        }
+      }
+      return moves;
+    }
+
+    function countDiscsOnBoard(sourceBoard) {
+      let black = 0;
+      let white = 0;
+      let empty = 0;
+      for (const row of sourceBoard) {
+        for (const cell of row) {
+          if (cell === BLACK) {
+            black += 1;
+          } else if (cell === WHITE) {
+            white += 1;
+          } else {
+            empty += 1;
+          }
+        }
+      }
+      return { black, white, empty };
+    }
+
+    const positionWeights = [
+      [120, -40, 20, 5, 5, 20, -40, 120],
+      [-40, -60, -5, -5, -5, -5, -60, -40],
+      [20, -5, 15, 3, 3, 15, -5, 20],
+      [5, -5, 3, 3, 3, 3, -5, 5],
+      [5, -5, 3, 3, 3, 3, -5, 5],
+      [20, -5, 15, 3, 3, 15, -5, 20],
+      [-40, -60, -5, -5, -5, -5, -60, -40],
+      [120, -40, 20, 5, 5, 20, -40, 120]
+    ];
+
+    function evaluateMove(row, col, player) {
+      const tempBoard = cloneBoard(board);
+      const flips = getFlipsOnBoard(tempBoard, row, col, player);
+      if (flips.length === 0) {
+        return -Infinity;
+      }
+      tempBoard[row][col] = player;
+      flips.forEach(([r, c]) => {
+        tempBoard[r][c] = player;
+      });
+
+      const { black, white, empty } = countDiscsOnBoard(tempBoard);
+      const discDiff = player === BLACK ? black - white : white - black;
+      if (empty <= 12) {
+        return discDiff * 10 + flips.length * 2;
+      }
+
+      let positionScore = 0;
+      for (let r = 0; r < SIZE; r += 1) {
+        for (let c = 0; c < SIZE; c += 1) {
+          if (tempBoard[r][c] === player) {
+            positionScore += positionWeights[r][c];
+          } else if (tempBoard[r][c] !== EMPTY) {
+            positionScore -= positionWeights[r][c];
+          }
+        }
+      }
+
+      const opponent = player === BLACK ? WHITE : BLACK;
+      const opponentMoves = getValidMovesForBoard(tempBoard, opponent).size;
+      const mobilityPenalty = opponentMoves * 4;
+      return positionScore + flips.length * 3 - mobilityPenalty;
+    }
+
     function chooseCpuMove() {
       let bestMove = null;
-      let bestFlips = -1;
-      for (const [key, flips] of currentValidMoves.entries()) {
-        if (flips.length > bestFlips) {
-          bestFlips = flips.length;
+      let bestScore = -Infinity;
+      for (const key of currentValidMoves.keys()) {
+        const [row, col] = key.split(",").map(Number);
+        const score = evaluateMove(row, col, currentPlayer);
+        if (score > bestScore) {
+          bestScore = score;
           bestMove = key;
         }
       }
@@ -543,19 +689,24 @@
     }
 
     function scheduleCpuMove() {
-      if (gameMode !== "cpu") {
+      if (gameMode === "human") {
         return;
       }
-      if (gameOver || currentPlayer !== cpuColor || currentValidMoves.size === 0) {
+      if (gameOver || !isCpuPlayer(currentPlayer) || currentValidMoves.size === 0) {
+        return;
+      }
+      if (cpuPaused) {
         return;
       }
       if (cpuTimer) {
         clearTimeout(cpuTimer);
       }
       setCpuThinking(true);
-      const delay = 500 + Math.floor(Math.random() * 401);
+      const delay = gameMode === "cpu-cpu"
+        ? Number(cpuSpeedSlider.value)
+        : 500 + Math.floor(Math.random() * 401);
       cpuTimer = setTimeout(() => {
-        if (gameOver || currentPlayer !== cpuColor) {
+        if (gameOver || !isCpuPlayer(currentPlayer) || cpuPaused) {
           setCpuThinking(false);
           return;
         }
@@ -626,7 +777,7 @@
       if (cpuThinking) {
         return;
       }
-      if (gameMode === "cpu" && currentPlayer === cpuColor) {
+      if (gameMode !== "human" && isCpuPlayer(currentPlayer)) {
         return;
       }
       initAudioContext();
@@ -659,6 +810,8 @@
         cpuTimer = null;
       }
       cpuThinking = false;
+      cpuPaused = false;
+      cpuToggleButton.textContent = "一時停止";
       gameOver = false;
       lastMoveKey = "";
       lastMoveLabel = "-";
@@ -669,17 +822,59 @@
     restartButton.addEventListener("click", restartGame);
     soundToggle.addEventListener("change", initAudioContext);
     volumeSlider.addEventListener("input", initAudioContext);
-    modeSelect.addEventListener("change", () => {
+    function applyModeSettings() {
       gameMode = modeSelect.value;
-      cpuColorSelect.disabled = gameMode !== "cpu";
+      if (gameMode === "human") {
+        cpuPlaysBlack = false;
+        cpuPlaysWhite = false;
+      } else if (gameMode === "cpu") {
+        cpuPlaysBlack = cpuBlackSelect.value === "cpu";
+        cpuPlaysWhite = cpuWhiteSelect.value === "cpu";
+        if (!cpuPlaysBlack && !cpuPlaysWhite) {
+          cpuPlaysWhite = true;
+          cpuWhiteSelect.value = "cpu";
+        }
+      } else {
+        cpuPlaysBlack = cpuBlackSelect.value === "cpu";
+        cpuPlaysWhite = cpuWhiteSelect.value === "cpu";
+        if (!cpuPlaysBlack && !cpuPlaysWhite) {
+          cpuPlaysBlack = true;
+          cpuBlackSelect.value = "cpu";
+        }
+      }
+      cpuSpeedSlider.disabled = gameMode !== "cpu-cpu";
+      cpuToggleButton.disabled = gameMode !== "cpu-cpu";
+    }
+
+    modeSelect.addEventListener("change", () => {
+      applyModeSettings();
       restartGame();
     });
-    cpuColorSelect.addEventListener("change", () => {
-      cpuColor = cpuColorSelect.value === "black" ? BLACK : WHITE;
+    cpuBlackSelect.addEventListener("change", () => {
+      applyModeSettings();
       restartGame();
+    });
+    cpuWhiteSelect.addEventListener("change", () => {
+      applyModeSettings();
+      restartGame();
+    });
+    cpuSpeedSlider.addEventListener("input", () => {
+      if (gameMode === "cpu-cpu" && !cpuPaused) {
+        scheduleCpuMove();
+      }
+    });
+    cpuToggleButton.addEventListener("click", () => {
+      if (gameMode !== "cpu-cpu") {
+        return;
+      }
+      cpuPaused = !cpuPaused;
+      cpuToggleButton.textContent = cpuPaused ? "再開" : "一時停止";
+      if (!cpuPaused) {
+        scheduleCpuMove();
+      }
     });
 
-    cpuColorSelect.disabled = gameMode !== "cpu";
+    applyModeSettings();
     buildBoardUI();
     restartGame();
   </script>
