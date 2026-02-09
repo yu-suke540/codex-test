@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>灯台ホテルの来客名簿</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f16;
+      --panel: rgba(16, 20, 28, 0.85);
+      --text: #e6edf3;
+      --accent: #f4c95d;
+      --muted: #9aa7b3;
+      --button: rgba(30, 40, 60, 0.85);
+      --button-hover: rgba(46, 63, 90, 0.95);
+      --glow: rgba(244, 201, 93, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 24px;
+      background: radial-gradient(circle at top, #1b2638 0%, #0b0f16 45%, #06080c 100%);
+      overflow: hidden;
+    }
+
+    .atmosphere,
+    .atmosphere::before,
+    .atmosphere::after {
+      position: absolute;
+      inset: -40% -20% 0 -20%;
+      content: "";
+      pointer-events: none;
+    }
+
+    .atmosphere {
+      z-index: 0;
+      background: linear-gradient(180deg, rgba(28, 36, 50, 0.7) 0%, rgba(7, 9, 14, 0.9) 60%);
+    }
+
+    .atmosphere::before {
+      background-image: linear-gradient(120deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 60%);
+      filter: blur(20px);
+      animation: fogMove 18s ease-in-out infinite;
+      opacity: 0.6;
+    }
+
+    .atmosphere::after {
+      background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 55%);
+      filter: blur(18px);
+      animation: fogMove 26s ease-in-out infinite reverse;
+      opacity: 0.35;
+    }
+
+    .rain {
+      position: absolute;
+      inset: -20% -50% 0 -50%;
+      background-image: repeating-linear-gradient(
+        120deg,
+        rgba(200, 220, 255, 0.08) 0,
+        rgba(200, 220, 255, 0.08) 1px,
+        rgba(200, 220, 255, 0) 1px,
+        rgba(200, 220, 255, 0) 6px
+      );
+      animation: rainMove 1.4s linear infinite;
+      opacity: 0.4;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    @keyframes fogMove {
+      0% {
+        transform: translate3d(-5%, -2%, 0);
+      }
+      50% {
+        transform: translate3d(5%, 2%, 0);
+      }
+      100% {
+        transform: translate3d(-5%, -2%, 0);
+      }
+    }
+
+    @keyframes rainMove {
+      0% {
+        transform: translateY(-10%);
+      }
+      100% {
+        transform: translateY(10%);
+      }
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      width: min(960px, 100%);
+      background: var(--panel);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(6px);
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }
+
+    h1 {
+      font-size: 1.7rem;
+      margin: 0;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-shadow: 0 0 12px var(--glow);
+    }
+
+    .progress {
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .story {
+      font-size: 1.05rem;
+      line-height: 1.9;
+      background: rgba(4, 8, 14, 0.65);
+      padding: 20px;
+      border-radius: 12px;
+      min-height: 200px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .story p {
+      margin: 0 0 12px;
+    }
+
+    .typewriter-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      background: var(--accent);
+      margin-left: 2px;
+      animation: blink 0.8s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    .choices {
+      display: grid;
+      gap: 10px;
+    }
+
+    button.choice,
+    button.control {
+      background: var(--button);
+      color: var(--text);
+      border: 1px solid transparent;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+      font-size: 0.98rem;
+    }
+
+    button.choice:hover,
+    button.control:hover {
+      background: var(--button-hover);
+      border-color: var(--accent);
+    }
+
+    button.choice:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .controls,
+    .settings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .settings {
+      background: rgba(7, 10, 16, 0.6);
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .setting {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-width: 160px;
+    }
+
+    .setting input[type="range"],
+    .setting select {
+      width: 100%;
+      accent-color: var(--accent);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .setting label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toggle input {
+      accent-color: var(--accent);
+    }
+
+    .log {
+      background: rgba(6, 9, 14, 0.55);
+      border-radius: 12px;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .log h2 {
+      font-size: 1rem;
+      margin: 0 0 8px;
+      color: var(--muted);
+    }
+
+    .log ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .ending {
+      border: 1px solid var(--accent);
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(244, 201, 93, 0.12);
+      margin-top: 6px;
+    }
+
+    @media (max-width: 700px) {
+      .app {
+        padding: 18px;
+      }
+
+      button.choice,
+      button.control {
+        font-size: 0.94rem;
+      }
+
+      .setting {
+        min-width: 140px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="atmosphere"></div>
+  <div class="rain"></div>
+  <main class="app">
+    <header>
+      <h1>灯台ホテルの来客名簿</h1>
+      <div class="progress" id="progress">章 1 / シーン 1</div>
+    </header>
+    <section class="story" id="story"></section>
+    <section class="choices" id="choices"></section>
+    <section class="settings">
+      <div class="setting">
+        <label for="speed">タイプ速度 <span id="speedValue">中</span></label>
+        <input id="speed" type="range" min="20" max="120" value="60" />
+      </div>
+      <div class="setting">
+        <label for="autoToggle">オート進行</label>
+        <div class="toggle">
+          <input id="autoToggle" type="checkbox" />
+          <span>ON</span>
+        </div>
+      </div>
+      <div class="setting">
+        <label for="skip">表示</label>
+        <button class="control" id="skip">スキップ</button>
+      </div>
+      <div class="setting">
+        <label for="audioToggle">音</label>
+        <button class="control" id="audioToggle">音を開始</button>
+      </div>
+      <div class="setting">
+        <label for="soundPreset">環境音</label>
+        <select id="soundPreset">
+          <option value="rain">雨</option>
+          <option value="wind">風</option>
+          <option value="drone">低音ドローン</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label for="volume">音量 <span id="volumeValue">60%</span></label>
+        <input id="volume" type="range" min="0" max="100" value="60" />
+      </div>
+    </section>
+    <section class="controls">
+      <button class="control" id="save">セーブ</button>
+      <button class="control" id="load">ロード</button>
+      <button class="control" id="restart">最初から</button>
+    </section>
+    <section class="log">
+      <h2>バックログ</h2>
+      <ul id="log"></ul>
+    </section>
+  </main>
+
+  <script>
+    const storageKey = "lighthouse-hotel-save";
+    const maxLogEntries = 5;
+    const autoDelayMs = 2200;
+
+    const storyData = {
+      start: {
+        id: "start",
+        chapter: "序章",
+        text: [
+          "嵐が近づく夜、あなたは北岬の灯台ホテルに辿り着いた。",
+          "受付には古びた名簿が置かれ、支配人は目を合わせようとしない。"
+        ],
+        choices: [
+          { label: "ロビーに進む", next: "lobby" }
+        ]
+      },
+      lobby: {
+        id: "lobby",
+        chapter: "第一章",
+        text: [
+          "ロビーの時計が低く鳴る。名簿の背表紙が妙に新しい。",
+          "宿泊者はあなたのほかに二人だけだと支配人は言った。"
+        ],
+        choices: [
+          { label: "名簿を確かめる", next: "guestbook", effects: { checkedGuestbook: true } },
+          { label: "支配人に話を聞く", next: "hostOffice", effects: { confrontedHost: true } },
+          { label: "廊下を見回す", next: "corridor" }
+        ]
+      },
+      guestbook: {
+        id: "guestbook",
+        chapter: "第一章",
+        text: [
+          "名簿には昨晩の記録が抜け落ちている。書き直された跡もある。",
+          "ページの間に、余白に挟まれた鍵の番号札が覗いた。"
+        ],
+        choices: [
+          { label: "番号札を覚えて支配人に確認する", next: "hostOffice", effects: { confrontedHost: true } },
+          { label: "宿泊客の一人に会う", next: "guest" }
+        ]
+      },
+      corridor: {
+        id: "corridor",
+        chapter: "第一章",
+        text: [
+          "廊下には客室の札が二つ。片方だけ錆びた鍵穴が開いている。",
+          "階段の下、物置に灯りが漏れていた。"
+        ],
+        choices: [
+          { label: "物置を覗く", next: "storage" },
+          { label: "ロビーに戻る", next: "lobby" }
+        ]
+      },
+      storage: {
+        id: "storage",
+        chapter: "第一章",
+        text: [
+          "物置には予備の鍵束が吊られている。",
+          "一本だけ新品で、名簿に書かれた番号と一致した。"
+        ],
+        choices: [
+          { label: "予備鍵を手に取る", next: "lobby", effects: { gotSpareKey: true } }
+        ]
+      },
+      hostOffice: {
+        id: "hostOffice",
+        chapter: "第二章",
+        text: [
+          "支配人の書斎は紙の匂いで満ちている。",
+          "あなたの問いに、彼は視線を逸らしながら『嵐の前は記録が乱れる』と言った。"
+        ],
+        choices: [
+          { label: "宿泊客の部屋に向かう", next: "guest" },
+          { label: "嵐に備えロビーへ戻る", next: "storm" }
+        ]
+      },
+      guest: {
+        id: "guest",
+        chapter: "第二章",
+        text: [
+          "宿泊客の青年は、窓辺で灯台を見つめていた。",
+          "『このホテルの名簿は嘘が書かれている』と彼は囁く。"
+        ],
+        choices: [
+          { label: "彼を信じて手を組む", next: "storm", effects: { trustedGuest: true } },
+          { label: "距離を置いてロビーに戻る", next: "storm" }
+        ]
+      },
+      storm: {
+        id: "storm",
+        chapter: "第三章",
+        text: [
+          "嵐が激しさを増し、灯台の明かりが揺れる。",
+          "支配人は全員をロビーに集め、外部との連絡が断たれたと告げた。"
+        ],
+        choices: [
+          { label: "名簿と鍵の違和感を整理する", next: "decision" },
+          { label: "支配人を問い詰める", next: "decision", effects: { confrontedHost: true } }
+        ]
+      },
+      decision: {
+        id: "decision",
+        chapter: "最終章",
+        text: [
+          "真実を掴むには、手元の断片をどう繋ぐかが鍵だ。",
+          "あなたは深く息を吸い込み、次の一手を選ぶ。"
+        ],
+        choices: [
+          {
+            label: "証拠を揃えて真相を突きつける",
+            next: "endingTruth",
+            condition: (state) => state.checkedGuestbook && state.gotSpareKey && state.confrontedHost
+          },
+          {
+            label: "支配人を強く非難する",
+            next: "endingBad"
+          },
+          {
+            label: "青年と共に行動する",
+            next: "endingAccomplice",
+            condition: (state) => state.trustedGuest
+          }
+        ]
+      },
+      endingTruth: {
+        id: "endingTruth",
+        chapter: "エンディング",
+        ending: "正体解明（真相）",
+        text: [
+          "名簿の書き換えと予備鍵の番号が一致し、支配人の証言が崩れた。",
+          "彼は事故を隠すために記録を改ざんしていたと告白する。",
+          "嵐が明け、真実だけが灯台の光の中に残った。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      },
+      endingBad: {
+        id: "endingBad",
+        chapter: "エンディング",
+        ending: "誤認の連鎖（バッド）",
+        text: [
+          "確証のない非難は、支配人と宿泊客の間に決定的な亀裂を生んだ。",
+          "名簿は燃やされ、真実は霧の中に消える。",
+          "あなたは誤認の連鎖に飲み込まれていった。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      },
+      endingAccomplice: {
+        id: "endingAccomplice",
+        chapter: "エンディング",
+        ending: "共犯成立（中間）",
+        text: [
+          "青年は鍵束を隠し持っていた。あなたは名簿の改ざんに協力する。",
+          "ふたりの嘘は嵐の音に紛れ、灯台ホテルに新たな客の名が刻まれる。",
+          "真相は伏せられたまま、あなたは共犯として夜を越えた。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      }
+    };
+
+    const sceneOrder = Object.keys(storyData);
+    const elements = {
+      story: document.getElementById("story"),
+      choices: document.getElementById("choices"),
+      progress: document.getElementById("progress"),
+      log: document.getElementById("log"),
+      save: document.getElementById("save"),
+      load: document.getElementById("load"),
+      restart: document.getElementById("restart"),
+      speed: document.getElementById("speed"),
+      speedValue: document.getElementById("speedValue"),
+      skip: document.getElementById("skip"),
+      autoToggle: document.getElementById("autoToggle"),
+      audioToggle: document.getElementById("audioToggle"),
+      soundPreset: document.getElementById("soundPreset"),
+      volume: document.getElementById("volume"),
+      volumeValue: document.getElementById("volumeValue")
+    };
+
+    let currentSceneId = "start";
+    let state = {
+      gotSpareKey: false,
+      checkedGuestbook: false,
+      confrontedHost: false,
+      trustedGuest: false
+    };
+    let backlog = [];
+    let typingToken = 0;
+    let typingDone = true;
+    let pendingAutoAdvance = null;
+    let audioContext = null;
+    let masterGain = null;
+    let ambienceNodes = null;
+
+    const speedLabel = (value) => {
+      if (value <= 40) return "遅い";
+      if (value <= 80) return "中";
+      return "速い";
+    };
+
+    const updateProgress = (sceneId) => {
+      const scene = storyData[sceneId];
+      const index = sceneOrder.indexOf(sceneId) + 1;
+      elements.progress.textContent = `${scene.chapter} / シーン ${index}`;
+    };
+
+    const clearAutoAdvance = () => {
+      if (pendingAutoAdvance) {
+        clearTimeout(pendingAutoAdvance);
+        pendingAutoAdvance = null;
+      }
+    };
+
+    const updateLog = (scene) => {
+      const summary = scene.text.join(" ");
+      backlog.unshift(summary);
+      backlog = backlog.slice(0, maxLogEntries);
+      elements.log.innerHTML = "";
+      backlog.forEach((entry) => {
+        const li = document.createElement("li");
+        li.textContent = entry;
+        elements.log.appendChild(li);
+      });
+    };
+
+    const applyEffects = (effects) => {
+      if (!effects) return;
+      state = { ...state, ...effects };
+    };
+
+    const disableChoices = (disabled) => {
+      const buttons = elements.choices.querySelectorAll("button.choice");
+      buttons.forEach((button) => {
+        button.disabled = disabled;
+      });
+    };
+
+    const renderChoices = (scene) => {
+      elements.choices.innerHTML = "";
+      const available = scene.choices.filter((choice) =>
+        typeof choice.condition === "function" ? choice.condition(state) : true
+      );
+
+      available.forEach((choice) => {
+        const button = document.createElement("button");
+        button.className = "choice";
+        button.textContent = choice.label;
+        button.disabled = !typingDone;
+        button.addEventListener("click", () => {
+          playBlip(260, 0.12);
+          if (choice.restart) {
+            state = {
+              gotSpareKey: false,
+              checkedGuestbook: false,
+              confrontedHost: false,
+              trustedGuest: false
+            };
+            backlog = [];
+          }
+          applyEffects(choice.effects);
+          goToScene(choice.next);
+        });
+        elements.choices.appendChild(button);
+      });
+
+      return available.length;
+    };
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const typeParagraph = async (paragraph, container, token) => {
+      const span = document.createElement("span");
+      container.appendChild(span);
+      for (let i = 0; i < paragraph.length; i += 1) {
+        if (token !== typingToken) return;
+        span.textContent += paragraph[i];
+        await wait(Number(elements.speed.value));
+      }
+    };
+
+    const renderStory = async (scene) => {
+      typingToken += 1;
+      const token = typingToken;
+      typingDone = false;
+      elements.story.innerHTML = "";
+      clearAutoAdvance();
+      const cursor = document.createElement("span");
+      cursor.className = "typewriter-cursor";
+
+      for (const paragraph of scene.text) {
+        if (token !== typingToken) return;
+        const p = document.createElement("p");
+        elements.story.appendChild(p);
+        await typeParagraph(paragraph, p, token);
+        elements.story.appendChild(cursor);
+      }
+
+      if (scene.ending) {
+        const endingTag = document.createElement("div");
+        endingTag.className = "ending";
+        endingTag.textContent = `エンディング: ${scene.ending}`;
+        elements.story.appendChild(endingTag);
+      }
+
+      if (token !== typingToken) return;
+      typingDone = true;
+      cursor.remove();
+      disableChoices(false);
+      scheduleAutoAdvance(scene);
+    };
+
+    const updateCursor = (active) => {
+      const existing = elements.story.querySelector(".typewriter-cursor");
+      if (active && !existing) {
+        const cursor = document.createElement("span");
+        cursor.className = "typewriter-cursor";
+        elements.story.appendChild(cursor);
+      }
+      if (!active && existing) {
+        existing.remove();
+      }
+    };
+
+    const skipTyping = () => {
+      if (typingDone) return;
+      typingToken += 1;
+      typingDone = true;
+      const scene = storyData[currentSceneId];
+      elements.story.innerHTML = "";
+      scene.text.forEach((paragraph) => {
+        const p = document.createElement("p");
+        p.textContent = paragraph;
+        elements.story.appendChild(p);
+      });
+      if (scene.ending) {
+        const endingTag = document.createElement("div");
+        endingTag.className = "ending";
+        endingTag.textContent = `エンディング: ${scene.ending}`;
+        elements.story.appendChild(endingTag);
+      }
+      updateCursor(false);
+      disableChoices(false);
+      scheduleAutoAdvance(scene);
+    };
+
+    const scheduleAutoAdvance = (scene) => {
+      clearAutoAdvance();
+      if (!elements.autoToggle.checked) return;
+      const available = scene.choices.filter((choice) =>
+        typeof choice.condition === "function" ? choice.condition(state) : true
+      );
+      if (available.length !== 1) return;
+      pendingAutoAdvance = setTimeout(() => {
+        applyEffects(available[0].effects);
+        playBlip(220, 0.1);
+        goToScene(available[0].next);
+      }, autoDelayMs);
+    };
+
+    const goToScene = (sceneId) => {
+      currentSceneId = sceneId;
+      const scene = storyData[sceneId];
+      updateProgress(sceneId);
+      updateLog(scene);
+      disableChoices(true);
+      renderStory(scene);
+      renderChoices(scene);
+      playBlip(320, 0.08);
+    };
+
+    const saveGame = () => {
+      const payload = {
+        sceneId: currentSceneId,
+        state
+      };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      alert("セーブしました。");
+    };
+
+    const loadGame = () => {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        alert("セーブデータがありません。");
+        return;
+      }
+      const data = JSON.parse(raw);
+      currentSceneId = data.sceneId || "start";
+      state = {
+        gotSpareKey: false,
+        checkedGuestbook: false,
+        confrontedHost: false,
+        trustedGuest: false,
+        ...data.state
+      };
+      backlog = [];
+      goToScene(currentSceneId);
+    };
+
+    const restartGame = () => {
+      state = {
+        gotSpareKey: false,
+        checkedGuestbook: false,
+        confrontedHost: false,
+        trustedGuest: false
+      };
+      backlog = [];
+      goToScene("start");
+    };
+
+    const updateSpeedLabel = () => {
+      const value = Number(elements.speed.value);
+      elements.speedValue.textContent = speedLabel(value);
+    };
+
+    const updateVolumeLabel = () => {
+      elements.volumeValue.textContent = `${elements.volume.value}%`;
+    };
+
+    const setMasterVolume = () => {
+      if (!masterGain) return;
+      masterGain.gain.value = Number(elements.volume.value) / 100;
+    };
+
+    const createNoiseBuffer = (context) => {
+      const bufferSize = context.sampleRate * 2;
+      const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i += 1) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+    };
+
+    const createRain = (context) => {
+      const source = context.createBufferSource();
+      source.buffer = createNoiseBuffer(context);
+      source.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.value = 600;
+      const gain = context.createGain();
+      gain.gain.value = 0.35;
+      source.connect(filter).connect(gain);
+      return { source, gain };
+    };
+
+    const createWind = (context) => {
+      const source = context.createBufferSource();
+      source.buffer = createNoiseBuffer(context);
+      source.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 420;
+      const gain = context.createGain();
+      gain.gain.value = 0.35;
+      source.connect(filter).connect(gain);
+      return { source, gain };
+    };
+
+    const createDrone = (context) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 54;
+      const gain = context.createGain();
+      gain.gain.value = 0.45;
+      oscillator.connect(gain);
+      return { source: oscillator, gain };
+    };
+
+    const startAudio = async () => {
+      if (audioContext) {
+        await audioContext.resume();
+        return;
+      }
+      audioContext = new AudioContext();
+      masterGain = audioContext.createGain();
+      masterGain.connect(audioContext.destination);
+      ambienceNodes = {
+        rain: createRain(audioContext),
+        wind: createWind(audioContext),
+        drone: createDrone(audioContext)
+      };
+      Object.values(ambienceNodes).forEach((node) => {
+        node.gain.connect(masterGain);
+        node.source.start();
+      });
+      setPreset(elements.soundPreset.value);
+      setMasterVolume();
+    };
+
+    const setPreset = (preset) => {
+      if (!ambienceNodes) return;
+      Object.entries(ambienceNodes).forEach(([key, node]) => {
+        node.gain.gain.value = key === preset ? 0.5 : 0.02;
+      });
+    };
+
+    const playBlip = (frequency, duration) => {
+      if (!audioContext) return;
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.18;
+      oscillator.connect(gain).connect(masterGain);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + duration);
+    };
+
+    elements.save.addEventListener("click", saveGame);
+    elements.load.addEventListener("click", loadGame);
+    elements.restart.addEventListener("click", restartGame);
+    elements.speed.addEventListener("input", updateSpeedLabel);
+    elements.skip.addEventListener("click", skipTyping);
+    elements.autoToggle.addEventListener("change", () => {
+      if (typingDone) {
+        scheduleAutoAdvance(storyData[currentSceneId]);
+      }
+    });
+    elements.audioToggle.addEventListener("click", async () => {
+      await startAudio();
+      elements.audioToggle.textContent = "音を再開";
+      playBlip(440, 0.12);
+    });
+    elements.soundPreset.addEventListener("change", (event) => {
+      setPreset(event.target.value);
+      playBlip(300, 0.1);
+    });
+    elements.volume.addEventListener("input", () => {
+      updateVolumeLabel();
+      setMasterVolume();
+    });
+
+    updateSpeedLabel();
+    updateVolumeLabel();
+    goToScene(currentSceneId);
+  </script>
+</body>
+</html>
