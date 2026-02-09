@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>灯台ホテルの来客名簿</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f131a;
+      --panel: #1a2130;
+      --text: #e6edf3;
+      --accent: #f4c95d;
+      --muted: #9aa7b3;
+      --button: #263145;
+      --button-hover: #32425e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .app {
+      width: min(900px, 100%);
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      margin: 0;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    .progress {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .story {
+      font-size: 1.05rem;
+      line-height: 1.9;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 18px;
+      border-radius: 12px;
+      min-height: 180px;
+    }
+
+    .story p {
+      margin: 0 0 12px;
+    }
+
+    .choices {
+      display: grid;
+      gap: 10px;
+    }
+
+    button.choice,
+    button.control {
+      background: var(--button);
+      color: var(--text);
+      border: 1px solid transparent;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+      font-size: 0.98rem;
+    }
+
+    button.choice:hover,
+    button.control:hover {
+      background: var(--button-hover);
+      border-color: var(--accent);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .log {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .log h2 {
+      font-size: 1rem;
+      margin: 0 0 8px;
+      color: var(--muted);
+    }
+
+    .log ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .ending {
+      border: 1px solid var(--accent);
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(244, 201, 93, 0.12);
+    }
+
+    @media (max-width: 600px) {
+      .app {
+        padding: 18px;
+      }
+
+      button.choice,
+      button.control {
+        font-size: 0.94rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>灯台ホテルの来客名簿</h1>
+      <div class="progress" id="progress">章 1 / シーン 1</div>
+    </header>
+    <section class="story" id="story"></section>
+    <section class="choices" id="choices"></section>
+    <section class="controls">
+      <button class="control" id="save">セーブ</button>
+      <button class="control" id="load">ロード</button>
+      <button class="control" id="restart">最初から</button>
+    </section>
+    <section class="log">
+      <h2>バックログ</h2>
+      <ul id="log"></ul>
+    </section>
+  </main>
+
+  <script>
+    const storageKey = "lighthouse-hotel-save";
+    const maxLogEntries = 5;
+
+    const storyData = {
+      start: {
+        id: "start",
+        chapter: "序章",
+        text: [
+          "嵐が近づく夜、あなたは北岬の灯台ホテルに辿り着いた。",
+          "受付には古びた名簿が置かれ、支配人は目を合わせようとしない。"
+        ],
+        choices: [
+          { label: "ロビーに進む", next: "lobby" }
+        ]
+      },
+      lobby: {
+        id: "lobby",
+        chapter: "第一章",
+        text: [
+          "ロビーの時計が低く鳴る。名簿の背表紙が妙に新しい。",
+          "宿泊者はあなたのほかに二人だけだと支配人は言った。"
+        ],
+        choices: [
+          { label: "名簿を確かめる", next: "guestbook", effects: { checkedGuestbook: true } },
+          { label: "支配人に話を聞く", next: "hostOffice", effects: { confrontedHost: true } },
+          { label: "廊下を見回す", next: "corridor" }
+        ]
+      },
+      guestbook: {
+        id: "guestbook",
+        chapter: "第一章",
+        text: [
+          "名簿には昨晩の記録が抜け落ちている。書き直された跡もある。",
+          "ページの間に、余白に挟まれた鍵の番号札が覗いた。"
+        ],
+        choices: [
+          { label: "番号札を覚えて支配人に確認する", next: "hostOffice", effects: { confrontedHost: true } },
+          { label: "宿泊客の一人に会う", next: "guest" }
+        ]
+      },
+      corridor: {
+        id: "corridor",
+        chapter: "第一章",
+        text: [
+          "廊下には客室の札が二つ。片方だけ錆びた鍵穴が開いている。",
+          "階段の下、物置に灯りが漏れていた。"
+        ],
+        choices: [
+          { label: "物置を覗く", next: "storage" },
+          { label: "ロビーに戻る", next: "lobby" }
+        ]
+      },
+      storage: {
+        id: "storage",
+        chapter: "第一章",
+        text: [
+          "物置には予備の鍵束が吊られている。",
+          "一本だけ新品で、名簿に書かれた番号と一致した。"
+        ],
+        choices: [
+          { label: "予備鍵を手に取る", next: "lobby", effects: { gotSpareKey: true } }
+        ]
+      },
+      hostOffice: {
+        id: "hostOffice",
+        chapter: "第二章",
+        text: [
+          "支配人の書斎は紙の匂いで満ちている。",
+          "あなたの問いに、彼は視線を逸らしながら『嵐の前は記録が乱れる』と言った。"
+        ],
+        choices: [
+          { label: "宿泊客の部屋に向かう", next: "guest" },
+          { label: "嵐に備えロビーへ戻る", next: "storm" }
+        ]
+      },
+      guest: {
+        id: "guest",
+        chapter: "第二章",
+        text: [
+          "宿泊客の青年は、窓辺で灯台を見つめていた。",
+          "『このホテルの名簿は嘘が書かれている』と彼は囁く。"
+        ],
+        choices: [
+          { label: "彼を信じて手を組む", next: "storm", effects: { trustedGuest: true } },
+          { label: "距離を置いてロビーに戻る", next: "storm" }
+        ]
+      },
+      storm: {
+        id: "storm",
+        chapter: "第三章",
+        text: [
+          "嵐が激しさを増し、灯台の明かりが揺れる。",
+          "支配人は全員をロビーに集め、外部との連絡が断たれたと告げた。"
+        ],
+        choices: [
+          { label: "名簿と鍵の違和感を整理する", next: "decision" },
+          { label: "支配人を問い詰める", next: "decision", effects: { confrontedHost: true } }
+        ]
+      },
+      decision: {
+        id: "decision",
+        chapter: "最終章",
+        text: [
+          "真実を掴むには、手元の断片をどう繋ぐかが鍵だ。",
+          "あなたは深く息を吸い込み、次の一手を選ぶ。"
+        ],
+        choices: [
+          {
+            label: "証拠を揃えて真相を突きつける",
+            next: "endingTruth",
+            condition: (state) => state.checkedGuestbook && state.gotSpareKey && state.confrontedHost
+          },
+          {
+            label: "支配人を強く非難する",
+            next: "endingBad"
+          },
+          {
+            label: "青年と共に行動する",
+            next: "endingAccomplice",
+            condition: (state) => state.trustedGuest
+          }
+        ]
+      },
+      endingTruth: {
+        id: "endingTruth",
+        chapter: "エンディング",
+        ending: "正体解明（真相）",
+        text: [
+          "名簿の書き換えと予備鍵の番号が一致し、支配人の証言が崩れた。",
+          "彼は事故を隠すために記録を改ざんしていたと告白する。",
+          "嵐が明け、真実だけが灯台の光の中に残った。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      },
+      endingBad: {
+        id: "endingBad",
+        chapter: "エンディング",
+        ending: "誤認の連鎖（バッド）",
+        text: [
+          "確証のない非難は、支配人と宿泊客の間に決定的な亀裂を生んだ。",
+          "名簿は燃やされ、真実は霧の中に消える。",
+          "あなたは誤認の連鎖に飲み込まれていった。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      },
+      endingAccomplice: {
+        id: "endingAccomplice",
+        chapter: "エンディング",
+        ending: "共犯成立（中間）",
+        text: [
+          "青年は鍵束を隠し持っていた。あなたは名簿の改ざんに協力する。",
+          "ふたりの嘘は嵐の音に紛れ、灯台ホテルに新たな客の名が刻まれる。",
+          "真相は伏せられたまま、あなたは共犯として夜を越えた。"
+        ],
+        choices: [
+          { label: "最初から遊び直す", next: "start", restart: true }
+        ]
+      }
+    };
+
+    const sceneOrder = Object.keys(storyData);
+    const elements = {
+      story: document.getElementById("story"),
+      choices: document.getElementById("choices"),
+      progress: document.getElementById("progress"),
+      log: document.getElementById("log"),
+      save: document.getElementById("save"),
+      load: document.getElementById("load"),
+      restart: document.getElementById("restart")
+    };
+
+    let currentSceneId = "start";
+    let state = {
+      gotSpareKey: false,
+      checkedGuestbook: false,
+      confrontedHost: false,
+      trustedGuest: false
+    };
+    let backlog = [];
+
+    const updateProgress = (sceneId) => {
+      const scene = storyData[sceneId];
+      const index = sceneOrder.indexOf(sceneId) + 1;
+      elements.progress.textContent = `${scene.chapter} / シーン ${index}`;
+    };
+
+    const renderStory = (scene) => {
+      elements.story.innerHTML = "";
+      scene.text.forEach((paragraph) => {
+        const p = document.createElement("p");
+        p.textContent = paragraph;
+        elements.story.appendChild(p);
+      });
+
+      if (scene.ending) {
+        const endingTag = document.createElement("div");
+        endingTag.className = "ending";
+        endingTag.textContent = `エンディング: ${scene.ending}`;
+        elements.story.appendChild(endingTag);
+      }
+    };
+
+    const updateLog = (scene) => {
+      const summary = scene.text.join(" ");
+      backlog.unshift(summary);
+      backlog = backlog.slice(0, maxLogEntries);
+      elements.log.innerHTML = "";
+      backlog.forEach((entry) => {
+        const li = document.createElement("li");
+        li.textContent = entry;
+        elements.log.appendChild(li);
+      });
+    };
+
+    const applyEffects = (effects) => {
+      if (!effects) return;
+      state = { ...state, ...effects };
+    };
+
+    const renderChoices = (scene) => {
+      elements.choices.innerHTML = "";
+      const available = scene.choices.filter((choice) =>
+        typeof choice.condition === "function" ? choice.condition(state) : true
+      );
+
+      available.forEach((choice) => {
+        const button = document.createElement("button");
+        button.className = "choice";
+        button.textContent = choice.label;
+        button.addEventListener("click", () => {
+          if (choice.restart) {
+            state = {
+              gotSpareKey: false,
+              checkedGuestbook: false,
+              confrontedHost: false,
+              trustedGuest: false
+            };
+            backlog = [];
+          }
+          applyEffects(choice.effects);
+          goToScene(choice.next);
+        });
+        elements.choices.appendChild(button);
+      });
+    };
+
+    const goToScene = (sceneId) => {
+      currentSceneId = sceneId;
+      const scene = storyData[sceneId];
+      updateProgress(sceneId);
+      renderStory(scene);
+      updateLog(scene);
+      renderChoices(scene);
+    };
+
+    const saveGame = () => {
+      const payload = {
+        sceneId: currentSceneId,
+        state
+      };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      alert("セーブしました。");
+    };
+
+    const loadGame = () => {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        alert("セーブデータがありません。");
+        return;
+      }
+      const data = JSON.parse(raw);
+      currentSceneId = data.sceneId || "start";
+      state = {
+        gotSpareKey: false,
+        checkedGuestbook: false,
+        confrontedHost: false,
+        trustedGuest: false,
+        ...data.state
+      };
+      backlog = [];
+      goToScene(currentSceneId);
+    };
+
+    const restartGame = () => {
+      state = {
+        gotSpareKey: false,
+        checkedGuestbook: false,
+        confrontedHost: false,
+        trustedGuest: false
+      };
+      backlog = [];
+      goToScene("start");
+    };
+
+    elements.save.addEventListener("click", saveGame);
+    elements.load.addEventListener("click", loadGame);
+    elements.restart.addEventListener("click", restartGame);
+
+    goToScene(currentSceneId);
+  </script>
+</body>
+</html>
