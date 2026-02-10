@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>build 2026-02-10-newthemepark-v1</title>
+  <title>build 2026-02-10-newthemepark-v2</title>
   <link rel="icon" href="data:," />
   <style>
     :root {
@@ -150,7 +150,7 @@
   <div id="game-root">
     <div id="hud">
       <div class="hud-card">
-        <h1 class="hud-title">build 2026-02-10-newthemepark-v1</h1>
+        <h1 class="hud-title">build 2026-02-10-newthemepark-v2</h1>
         <div class="stats-grid">
           <div class="stat" id="money"></div>
           <div class="stat" id="day"></div>
@@ -158,6 +158,7 @@
           <div class="stat" id="satisfaction"></div>
           <div class="stat" id="tool"></div>
           <div class="stat" id="zoom"></div>
+          <div class="stat" id="timectrl"></div>
         </div>
         <div class="status" id="status"></div>
       </div>
@@ -165,18 +166,22 @@
         <h2 class="hud-title">建設キー</h2>
         <div><span class="kbd">1</span>道（¥15） / <span class="kbd">2</span>アトラクション（¥180） / <span class="kbd">3</span>売店（¥120）</div>
         <div><span class="kbd">4</span>入口ゲート（1つのみ） / <span class="kbd">X</span>消しゴム</div>
-        <div><span class="kbd">S</span>セーブ / <span class="kbd">L</span>ロード / <span class="kbd">N</span>ニューゲーム</div>
+        <div><span class="kbd">S</span>セーブ / <span class="kbd">L</span>ロード / <span class="kbd">N</span>ニューゲーム / <span class="kbd">I</span>見る</div>
       </div>
       <div class="hud-card">
         <h2 class="hud-title">移動操作</h2>
         <div><span class="kbd">WASD</span> または <span class="kbd">↑↓←→</span> カメラ移動</div>
         <div>右ドラッグでもカメラ移動</div>
-        <div>マウスホイールでズーム</div>
-        <div>左クリックで建設（緑=設置可/赤=不可）</div>
+        <div>マウスホイールでズーム / <span class="kbd">Space</span>停止・再開 / <span class="kbd">Q/E</span>速度</div>
+        <div>左クリックで建設（緑=設置可/赤=不可） / <span class="kbd">Esc</span>選択解除</div>
       </div>
     </div>
     <div id="canvas-wrap">
       <canvas id="game-canvas" aria-label="2Dテーマパークゲーム"></canvas>
+      <div id="inspect-panel" style="position:absolute;right:12px;top:12px;min-width:260px;max-width:340px;background:rgba(9,16,22,.9);border:1px solid rgba(133,171,205,.45);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.35);display:none;z-index:5;">
+        <div style="font-weight:700;color:#9fe9ff;margin-bottom:6px;">施設情報（Inspect）</div>
+        <div id="inspect-content" style="font-size:13px;line-height:1.5;"></div>
+      </div>
     </div>
   </div>
 
@@ -187,14 +192,16 @@
       // -----------------------------
       // Constants / Config
       // -----------------------------
-      const BUILD_ID = "build 2026-02-10-newthemepark-v1";
-      const SAVE_KEY = "newthemepark-save-v1";
+      const BUILD_ID = "build 2026-02-10-newthemepark-v2";
+      const SAVE_KEY = "newthemepark-save-v2";
+      const LEGACY_SAVE_KEY = "newthemepark-save-v1";
       const MAP_W = 72;
       const MAP_H = 48;
       const BASE_TILE = 32;
       const DAY_SECONDS = 16;
       const SPAWN_INTERVAL = 2.2;
       const MAX_VISITORS = 120;
+      const SPEED_LEVELS = [0.5, 1, 2, 4];
 
       const TOOL = {
         ROAD: "road",
@@ -202,6 +209,7 @@
         SHOP: "shop",
         GATE: "gate",
         ERASE: "erase",
+        INSPECT: "inspect",
       };
 
       const COSTS = {
@@ -299,6 +307,10 @@
         cameraY: 0,
         zoom: 1,
         floaters: [],
+        paused: false,
+        speedIndex: 1,
+        selectedFacilityId: null,
+        gameClock: 0,
       };
 
       // default starter roads
@@ -322,6 +334,9 @@
       const hudTool = document.getElementById("tool");
       const hudStatus = document.getElementById("status");
       const hudZoom = document.getElementById("zoom");
+      const hudTimeCtrl = document.getElementById("timectrl");
+      const inspectPanel = document.getElementById("inspect-panel");
+      const inspectContent = document.getElementById("inspect-content");
 
       if (!ctx) {
         console.error("Canvas context unavailable");
@@ -451,6 +466,10 @@
             type,
             x,
             y,
+            served: 0,
+            lifetimeRevenue: 0,
+            todayRevenue: 0,
+            lastServedAt: null,
           });
           setStatus(type === "ride" ? "アトラクション建設！" : "売店を設置！", 1.1);
           return;
@@ -471,6 +490,9 @@
           return;
         }
 
+        if (state.tool === TOOL.INSPECT) {
+          return !!getFacilityAt(x, y);
+        }
         if (state.tool === TOOL.ERASE) {
           if (isGateAt(x, y)) {
             state.gate = null;
@@ -480,7 +502,9 @@
           }
           const i = state.facilities.findIndex((f) => f.x === x && f.y === y);
           if (i >= 0) {
+            const removed = state.facilities[i];
             state.facilities.splice(i, 1);
+            if (state.selectedFacilityId === removed.id) state.selectedFacilityId = null;
             setStatus("施設を撤去しました", 1.1);
             return;
           }
@@ -650,8 +674,13 @@
             if (v.stayTimer <= 0) {
               const facility = state.facilities.find((f) => f.id === v.targetFacilityId);
               if (facility) {
-                state.money += INCOME[facility.type];
+                const gain = INCOME[facility.type];
+                state.money += gain;
                 state.totalServed += 1;
+                facility.served = Number(facility.served || 0) + 1;
+                facility.lifetimeRevenue = Number(facility.lifetimeRevenue || 0) + gain;
+                facility.todayRevenue = Number(facility.todayRevenue || 0) + gain;
+                facility.lastServedAt = state.gameClock;
                 state.floaters.push({
                   text: `+¥${INCOME[facility.type]}`,
                   x: facility.x + 0.5,
@@ -699,6 +728,7 @@
           daily += MAINTENANCE[f.type] || 0;
         }
         state.money -= daily;
+        for (const f of state.facilities) f.todayRevenue = 0;
         setStatus(`維持費 ¥${daily} を支払いました`, 1.3);
       }
 
@@ -712,7 +742,14 @@
 
         if (state.statusTimer > 0) state.statusTimer -= dt;
 
-        state.dayTimer += dt;
+        if (state.paused) {
+          return;
+        }
+
+        const simDt = dt * SPEED_LEVELS[state.speedIndex];
+        state.gameClock += simDt;
+
+        state.dayTimer += simDt;
         if (state.dayTimer >= DAY_SECONDS) {
           state.dayTimer -= DAY_SECONDS;
           state.day += 1;
@@ -724,14 +761,14 @@
             setStatus("入口ゲートを置いてください", 0.6);
           }
         } else {
-          state.spawnTimer += dt;
+          state.spawnTimer += simDt;
           if (state.spawnTimer >= SPAWN_INTERVAL) {
             state.spawnTimer = 0;
             spawnVisitor();
           }
         }
 
-        tickVisitors(dt);
+        tickVisitors(simDt);
       }
 
       // -----------------------------
@@ -926,6 +963,9 @@
         if (state.tool === TOOL.GATE) {
           return !getFacilityAt(x, y) && !state.roads.has(key(x, y));
         }
+        if (state.tool === TOOL.INSPECT) {
+          return !!getFacilityAt(x, y);
+        }
         if (state.tool === TOOL.ERASE) {
           return !!(isGateAt(x, y) || getFacilityAt(x, y) || state.roads.has(key(x, y)));
         }
@@ -948,6 +988,9 @@
           drawShop(tile);
         } else if (state.tool === TOOL.GATE) {
           drawGate(tile);
+        } else if (state.tool === TOOL.INSPECT) {
+          ctx.fillStyle = "#5db7ff";
+          ctx.fillRect(tile*0.2, tile*0.2, tile*0.6, tile*0.6);
         } else {
           ctx.fillStyle = "#e83838";
           ctx.fillRect(0, 0, tile, tile);
@@ -1009,6 +1052,11 @@
             if (facility) {
               if (facility.type === "ride") drawRide(tile);
               else drawShop(tile);
+              if (facility.id === state.selectedFacilityId) {
+                ctx.strokeStyle = "rgba(120,220,255,0.95)";
+                ctx.lineWidth = 3;
+                ctx.strokeRect(2, 2, tile - 4, tile - 4);
+              }
             }
             ctx.restore();
           }
@@ -1036,11 +1084,34 @@
           [TOOL.SHOP]: "売店",
           [TOOL.GATE]: "入口ゲート",
           [TOOL.ERASE]: "消しゴム",
+          [TOOL.INSPECT]: "見る",
         }[state.tool];
         hudTool.textContent = `現在ツール: ${toolName}`;
         hudZoom.textContent = `ズーム: ${Math.round(state.zoom * 100)}%`;
+        hudTimeCtrl.textContent = state.paused ? "時間: paused" : `時間: speed ${SPEED_LEVELS[state.speedIndex]}x`;
         hudStatus.textContent = state.statusTimer > 0 ? state.lastStatus : (state.gate ? "" : "入口ゲートを置いてください");
         hudStatus.style.color = state.money < 0 ? "var(--bad)" : "var(--warn)";
+
+        const selected = state.facilities.find((f) => f.id === state.selectedFacilityId) || null;
+        if (!selected) {
+          inspectPanel.style.display = "none";
+        } else {
+          inspectPanel.style.display = "block";
+          const typeName = selected.type === "ride" ? "アトラクション" : "売店";
+          const maintenance = MAINTENANCE[selected.type] || 0;
+          const buildCost = COSTS[selected.type] || 0;
+          const last = selected.lastServedAt == null ? "-" : `${selected.lastServedAt.toFixed(1)}s`;
+          inspectContent.innerHTML = `
+            <div>種類: <b>${typeName}</b></div>
+            <div>座標: (${selected.x}, ${selected.y})</div>
+            <div>建設費: ¥${buildCost}</div>
+            <div>維持費/日: ¥${maintenance}</div>
+            <div>利用回数 served: ${Number(selected.served || 0)}</div>
+            <div>累計売上: ¥${Number(selected.lifetimeRevenue || 0)}</div>
+            <div>今日の売上: ¥${Number(selected.todayRevenue || 0)}</div>
+            <div>最終利用時刻: ${last}</div>
+          `;
+        }
       }
 
       // -----------------------------
@@ -1060,6 +1131,8 @@
           cameraX: state.cameraX,
           cameraY: state.cameraY,
           zoom: state.zoom,
+          gameClock: state.gameClock,
+          speedIndex: state.speedIndex,
         };
       }
 
@@ -1069,7 +1142,13 @@
           return;
         }
         state.roads = new Set(data.roads);
-        state.facilities = Array.isArray(data.facilities) ? data.facilities : [];
+        state.facilities = Array.isArray(data.facilities) ? data.facilities.map((f) => ({
+          ...f,
+          served: Number(f.served || 0),
+          lifetimeRevenue: Number(f.lifetimeRevenue || 0),
+          todayRevenue: Number(f.todayRevenue || 0),
+          lastServedAt: f.lastServedAt == null ? null : Number(f.lastServedAt),
+        })) : [];
         state.gate = data.gate || null;
         state.nextFacilityId = Number(data.nextFacilityId || 1);
         state.money = Number(data.money || 0);
@@ -1079,6 +1158,10 @@
         state.cameraX = Number(data.cameraX || 0);
         state.cameraY = Number(data.cameraY || 0);
         state.zoom = clamp(Number(data.zoom || 1), 0.6, 2.4);
+        state.gameClock = Number(data.gameClock || 0);
+        state.speedIndex = clamp(Number(data.speedIndex || 1), 0, SPEED_LEVELS.length - 1);
+        state.paused = false;
+        state.selectedFacilityId = null;
         state.visitors = [];
         state.floaters = [];
         clampCamera();
@@ -1096,7 +1179,7 @@
 
       function loadGame() {
         try {
-          const raw = localStorage.getItem(SAVE_KEY);
+          const raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY);
           if (!raw) {
             setStatus("セーブデータがありません", 1.3);
             return;
@@ -1130,6 +1213,10 @@
         state.cameraX = 0;
         state.cameraY = 0;
         state.zoom = 1;
+        state.paused = false;
+        state.speedIndex = 1;
+        state.selectedFacilityId = null;
+        state.gameClock = 0;
         setStatus("ニューゲーム開始", 1.3);
       }
 
@@ -1145,7 +1232,7 @@
         const k = e.key.toLowerCase();
         keys.add(k);
 
-        if (["1", "2", "3", "4", "x", "s", "l", "n"].includes(k)) {
+        if (["1", "2", "3", "4", "x", "s", "l", "n", "i", " ", "q", "e", "escape"].includes(k)) {
           e.preventDefault();
         }
 
@@ -1154,6 +1241,11 @@
         else if (k === "3") state.tool = TOOL.SHOP;
         else if (k === "4") state.tool = TOOL.GATE;
         else if (k === "x") state.tool = TOOL.ERASE;
+        else if (k === "i") state.tool = TOOL.INSPECT;
+        else if (k === " ") state.paused = !state.paused;
+        else if (k === "q") state.speedIndex = (state.speedIndex + SPEED_LEVELS.length - 1) % SPEED_LEVELS.length;
+        else if (k === "e") state.speedIndex = (state.speedIndex + 1) % SPEED_LEVELS.length;
+        else if (k === "escape") state.selectedFacilityId = null;
         else if (k === "s") saveGame();
         else if (k === "l") loadGame();
         else if (k === "n") resetGame();
@@ -1180,6 +1272,9 @@
         }
       });
 
+      let leftDownPos = null;
+      let movedWhileLeftDown = false;
+
       canvas.addEventListener("mousedown", (e) => {
         if (e.button === 2) {
           isRightDragging = true;
@@ -1187,13 +1282,33 @@
           return;
         }
         if (e.button !== 0) return;
-        const t = screenToTile(e.clientX, e.clientY);
-        handleBuild(t.x, t.y);
+        leftDownPos = { x: e.clientX, y: e.clientY };
+        movedWhileLeftDown = false;
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        if (leftDownPos && (Math.abs(e.clientX - leftDownPos.x) > 4 || Math.abs(e.clientY - leftDownPos.y) > 4)) {
+          movedWhileLeftDown = true;
+        }
       });
 
       window.addEventListener("mouseup", (e) => {
         if (e.button === 2) {
           isRightDragging = false;
+          return;
+        }
+        if (e.button !== 0) return;
+        if (!leftDownPos) return;
+        const wasDrag = movedWhileLeftDown || isRightDragging;
+        leftDownPos = null;
+        if (wasDrag) return;
+
+        const t = screenToTile(e.clientX, e.clientY);
+        if (state.tool === TOOL.INSPECT) {
+          const f = getFacilityAt(t.x, t.y);
+          state.selectedFacilityId = f ? f.id : null;
+        } else {
+          handleBuild(t.x, t.y);
         }
       });
 
