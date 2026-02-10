@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>build 2026-02-10-themepark-v1</title>
+    <title>build 2026-02-10-themepark-v2</title>
     <style>
       :root {
         color-scheme: light;
@@ -23,19 +23,29 @@
         background: #6a9f43;
       }
 
-      #build-label {
+      #hud {
         position: fixed;
         top: 10px;
         left: 12px;
         z-index: 10;
-        font-size: clamp(22px, 3vw, 38px);
-        font-weight: 800;
-        line-height: 1.1;
-        letter-spacing: 0.02em;
         color: #ffffff;
         text-shadow: 0 2px 3px rgba(0, 0, 0, 0.45);
         user-select: none;
         pointer-events: none;
+      }
+
+      #hud-build {
+        font-size: clamp(22px, 3vw, 38px);
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: 0.02em;
+        margin-bottom: 6px;
+      }
+
+      #hud-meta {
+        font-size: clamp(13px, 1.5vw, 18px);
+        line-height: 1.35;
+        font-weight: 600;
       }
 
       #game-canvas {
@@ -46,7 +56,14 @@
     </style>
   </head>
   <body>
-    <div id="build-label">build 2026-02-10-themepark-v1</div>
+    <div id="hud" aria-live="polite">
+      <div id="hud-build">build 2026-02-10-themepark-v2</div>
+      <div id="hud-meta">
+        <div id="hud-hover">hover: (-, -)</div>
+        <div id="hud-road-count">road count: 0</div>
+        <div>左クリックで道を置く / 消す</div>
+      </div>
+    </div>
     <canvas id="game-canvas" aria-label="草地タイル表示"></canvas>
 
     <!--
@@ -58,19 +75,40 @@
            py -m http.server 8000
            (または python -m http.server 8000)
          - Chrome で http://localhost:8000/apps/themepark/index.html を開く。
+      3) ステップ2確認
+         - マウス移動で hover 座標が変化し、該当タイルがハイライトされる。
+         - 左クリックで道がトグル配置され、road count が増減する。
+         - リサイズ後も配置済みの道が残る。
     -->
 
     <script>
       (() => {
         "use strict";
 
+        const BUILD_LABEL = "build 2026-02-10-themepark-v2";
         const TILE_SIZE = 32;
         const BASE_A = "#78b24f";
         const BASE_B = "#6ea847";
         const SPECK = "rgba(24, 71, 20, 0.32)";
+        const ROAD_FILL = "#8b8f95";
+        const ROAD_EDGE = "rgba(255, 255, 255, 0.22)";
+        const HOVER_FILL = "rgba(255, 255, 220, 0.23)";
+        const HOVER_EDGE = "rgba(255, 255, 255, 0.8)";
 
         const canvas = document.getElementById("game-canvas");
         const ctx = canvas.getContext("2d", { alpha: false });
+        const hudBuild = document.getElementById("hud-build");
+        const hudHover = document.getElementById("hud-hover");
+        const hudRoadCount = document.getElementById("hud-road-count");
+
+        const roadTiles = new Set();
+        let hoverTile = null;
+        let cssWidth = 0;
+        let cssHeight = 0;
+        let dpr = 1;
+
+        hudBuild.textContent = BUILD_LABEL;
+        document.title = BUILD_LABEL;
 
         const speckPattern = [
           [4, 6],
@@ -83,10 +121,23 @@
           [22, 27]
         ];
 
+        function tileKey(x, y) {
+          return `${x},${y}`;
+        }
+
+        function updateHud() {
+          if (hoverTile) {
+            hudHover.textContent = `hover: (${hoverTile.x}, ${hoverTile.y})`;
+          } else {
+            hudHover.textContent = "hover: (-, -)";
+          }
+          hudRoadCount.textContent = `road count: ${roadTiles.size}`;
+        }
+
         function resizeCanvasAndRender() {
-          const dpr = Math.max(1, window.devicePixelRatio || 1);
-          const cssWidth = window.innerWidth;
-          const cssHeight = window.innerHeight;
+          dpr = Math.max(1, window.devicePixelRatio || 1);
+          cssWidth = window.innerWidth;
+          cssHeight = window.innerHeight;
 
           canvas.width = Math.floor(cssWidth * dpr);
           canvas.height = Math.floor(cssHeight * dpr);
@@ -94,13 +145,30 @@
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.imageSmoothingEnabled = false;
 
-          render(cssWidth, cssHeight);
+          render();
         }
 
-        function render(width, height) {
-          const cols = Math.ceil(width / TILE_SIZE);
-          const rows = Math.ceil(height / TILE_SIZE);
+        function getPointerTile(event) {
+          const rect = canvas.getBoundingClientRect();
+          const localX = event.clientX - rect.left;
+          const localY = event.clientY - rect.top;
 
+          if (localX < 0 || localY < 0 || localX >= rect.width || localY >= rect.height) {
+            return null;
+          }
+
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+          const cssX = (localX * scaleX) / dpr;
+          const cssY = (localY * scaleY) / dpr;
+
+          const tileX = Math.floor(cssX / TILE_SIZE);
+          const tileY = Math.floor(cssY / TILE_SIZE);
+
+          return { x: tileX, y: tileY };
+        }
+
+        function drawGrassAndSpecks(cols, rows) {
           for (let y = 0; y < rows; y += 1) {
             for (let x = 0; x < cols; x += 1) {
               const px = x * TILE_SIZE;
@@ -120,7 +188,82 @@
           }
         }
 
+        function drawRoads(cols, rows) {
+          roadTiles.forEach((key) => {
+            const [xText, yText] = key.split(",");
+            const x = Number.parseInt(xText, 10);
+            const y = Number.parseInt(yText, 10);
+
+            if (x < 0 || y < 0 || x >= cols || y >= rows) {
+              return;
+            }
+
+            const px = x * TILE_SIZE;
+            const py = y * TILE_SIZE;
+            ctx.fillStyle = ROAD_FILL;
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+            ctx.strokeStyle = ROAD_EDGE;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+          });
+        }
+
+        function drawHover() {
+          if (!hoverTile) {
+            return;
+          }
+          const px = hoverTile.x * TILE_SIZE;
+          const py = hoverTile.y * TILE_SIZE;
+
+          ctx.fillStyle = HOVER_FILL;
+          ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+          ctx.strokeStyle = HOVER_EDGE;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 1, py + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+        }
+
+        function render() {
+          const cols = Math.ceil(cssWidth / TILE_SIZE);
+          const rows = Math.ceil(cssHeight / TILE_SIZE);
+
+          drawGrassAndSpecks(cols, rows);
+          drawRoads(cols, rows);
+          drawHover();
+          updateHud();
+        }
+
+        function onPointerMove(event) {
+          hoverTile = getPointerTile(event);
+          render();
+        }
+
+        function onPointerLeave() {
+          hoverTile = null;
+          render();
+        }
+
+        function onClick(event) {
+          const tile = getPointerTile(event);
+          if (!tile) {
+            return;
+          }
+          const key = tileKey(tile.x, tile.y);
+          if (roadTiles.has(key)) {
+            roadTiles.delete(key);
+          } else {
+            roadTiles.add(key);
+          }
+          hoverTile = tile;
+          render();
+        }
+
         window.addEventListener("resize", resizeCanvasAndRender);
+        canvas.addEventListener("mousemove", onPointerMove);
+        canvas.addEventListener("mouseleave", onPointerLeave);
+        canvas.addEventListener("click", onClick);
+
         resizeCanvasAndRender();
       })();
     </script>
