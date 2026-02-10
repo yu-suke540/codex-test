@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>build 2026-02-10-themepark-v1</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+        background: #6a9f43;
+      }
+
+      #build-label {
+        position: fixed;
+        top: 10px;
+        left: 12px;
+        z-index: 10;
+        font-size: clamp(22px, 3vw, 38px);
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: 0.02em;
+        color: #ffffff;
+        text-shadow: 0 2px 3px rgba(0, 0, 0, 0.45);
+        user-select: none;
+        pointer-events: none;
+      }
+
+      #game-canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="build-label">build 2026-02-10-themepark-v1</div>
+    <canvas id="game-canvas" aria-label="草地タイル表示"></canvas>
+
+    <!--
+      動作確認手順
+      1) 直接開く方法
+         - apps/themepark/index.html を Chrome で直接開く。
+      2) 直接開いて問題がある場合の簡易サーバ手順
+         - このリポジトリのルートで以下を実行:
+           py -m http.server 8000
+           (または python -m http.server 8000)
+         - Chrome で http://localhost:8000/apps/themepark/index.html を開く。
+    -->
+
+    <script>
+      (() => {
+        "use strict";
+
+        const TILE_SIZE = 32;
+        const BASE_A = "#78b24f";
+        const BASE_B = "#6ea847";
+        const SPECK = "rgba(24, 71, 20, 0.32)";
+
+        const canvas = document.getElementById("game-canvas");
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        const speckPattern = [
+          [4, 6],
+          [12, 9],
+          [24, 4],
+          [7, 18],
+          [19, 15],
+          [28, 20],
+          [10, 26],
+          [22, 27]
+        ];
+
+        function resizeCanvasAndRender() {
+          const dpr = Math.max(1, window.devicePixelRatio || 1);
+          const cssWidth = window.innerWidth;
+          const cssHeight = window.innerHeight;
+
+          canvas.width = Math.floor(cssWidth * dpr);
+          canvas.height = Math.floor(cssHeight * dpr);
+
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.imageSmoothingEnabled = false;
+
+          render(cssWidth, cssHeight);
+        }
+
+        function render(width, height) {
+          const cols = Math.ceil(width / TILE_SIZE);
+          const rows = Math.ceil(height / TILE_SIZE);
+
+          for (let y = 0; y < rows; y += 1) {
+            for (let x = 0; x < cols; x += 1) {
+              const px = x * TILE_SIZE;
+              const py = y * TILE_SIZE;
+
+              ctx.fillStyle = (x + y) % 2 === 0 ? BASE_A : BASE_B;
+              ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+              ctx.fillStyle = SPECK;
+              for (let i = 0; i < speckPattern.length; i += 1) {
+                const point = speckPattern[i];
+                const ox = point[0] + ((x * 13 + y * 7 + i * 5) % 3);
+                const oy = point[1] + ((x * 5 + y * 11 + i * 3) % 3);
+                ctx.fillRect(px + ox, py + oy, 1.4, 1.4);
+              }
+            }
+          }
+        }
+
+        window.addEventListener("resize", resizeCanvasAndRender);
+        resizeCanvasAndRender();
+      })();
+    </script>
+  </body>
+</html>
