@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>build 2026-02-10-themepark-v2</title>
+    <title>build 2026-02-10-themepark-v3</title>
     <style>
       :root {
         color-scheme: light;
@@ -32,6 +32,7 @@
         text-shadow: 0 2px 3px rgba(0, 0, 0, 0.45);
         user-select: none;
         pointer-events: none;
+        max-width: min(92vw, 820px);
       }
 
       #hud-build {
@@ -48,6 +49,10 @@
         font-weight: 600;
       }
 
+      #hud-message {
+        min-height: 1.35em;
+      }
+
       #game-canvas {
         display: block;
         width: 100vw;
@@ -57,11 +62,14 @@
   </head>
   <body>
     <div id="hud" aria-live="polite">
-      <div id="hud-build">build 2026-02-10-themepark-v2</div>
+      <div id="hud-build">build 2026-02-10-themepark-v3</div>
       <div id="hud-meta">
+        <div id="hud-tool">tool: road</div>
         <div id="hud-hover">hover: (-, -)</div>
         <div id="hud-road-count">road count: 0</div>
-        <div>左クリックで道を置く / 消す</div>
+        <div id="hud-attraction-count">attraction count: 0</div>
+        <div>R/A/X でツール切替、クリックで配置</div>
+        <div id="hud-message"></div>
       </div>
     </div>
     <canvas id="game-canvas" aria-label="草地タイル表示"></canvas>
@@ -75,34 +83,47 @@
            py -m http.server 8000
            (または python -m http.server 8000)
          - Chrome で http://localhost:8000/apps/themepark/index.html を開く。
-      3) ステップ2確認
-         - マウス移動で hover 座標が変化し、該当タイルがハイライトされる。
-         - 左クリックで道がトグル配置され、road count が増減する。
-         - リサイズ後も配置済みの道が残る。
+      3) ステップ3確認
+         - R/A/X でツール切替ができる。
+         - 道ツールで道をトグル配置できる。
+         - 施設は道に上下左右で隣接する草地にのみ置ける。
+         - 消しゴムで道/施設を消せる（重なり時は施設優先）。
+         - リサイズ後も道と施設が残る。
     -->
 
     <script>
       (() => {
         "use strict";
 
-        const BUILD_LABEL = "build 2026-02-10-themepark-v2";
+        const BUILD_LABEL = "build 2026-02-10-themepark-v3";
         const TILE_SIZE = 32;
         const BASE_A = "#78b24f";
         const BASE_B = "#6ea847";
         const SPECK = "rgba(24, 71, 20, 0.32)";
         const ROAD_FILL = "#8b8f95";
         const ROAD_EDGE = "rgba(255, 255, 255, 0.22)";
+        const ATTRACTION_FILL = "#d4682f";
+        const ATTRACTION_MARK = "#ffe4a8";
         const HOVER_FILL = "rgba(255, 255, 220, 0.23)";
         const HOVER_EDGE = "rgba(255, 255, 255, 0.8)";
+        const TOOL_ROAD = "road";
+        const TOOL_ATTRACTION = "attraction";
+        const TOOL_ERASE = "erase";
 
         const canvas = document.getElementById("game-canvas");
         const ctx = canvas.getContext("2d", { alpha: false });
         const hudBuild = document.getElementById("hud-build");
+        const hudTool = document.getElementById("hud-tool");
         const hudHover = document.getElementById("hud-hover");
         const hudRoadCount = document.getElementById("hud-road-count");
+        const hudAttractionCount = document.getElementById("hud-attraction-count");
+        const hudMessage = document.getElementById("hud-message");
 
         const roadTiles = new Set();
+        const attractionTiles = new Set();
         let hoverTile = null;
+        let currentTool = TOOL_ROAD;
+        let hudFlashMessage = "";
         let cssWidth = 0;
         let cssHeight = 0;
         let dpr = 1;
@@ -125,13 +146,28 @@
           return `${x},${y}`;
         }
 
+        function parseTileKey(key) {
+          const [xText, yText] = key.split(",");
+          return {
+            x: Number.parseInt(xText, 10),
+            y: Number.parseInt(yText, 10)
+          };
+        }
+
+        function setMessage(text) {
+          hudFlashMessage = text;
+        }
+
         function updateHud() {
+          hudTool.textContent = `tool: ${currentTool}`;
           if (hoverTile) {
             hudHover.textContent = `hover: (${hoverTile.x}, ${hoverTile.y})`;
           } else {
             hudHover.textContent = "hover: (-, -)";
           }
           hudRoadCount.textContent = `road count: ${roadTiles.size}`;
+          hudAttractionCount.textContent = `attraction count: ${attractionTiles.size}`;
+          hudMessage.textContent = hudFlashMessage;
         }
 
         function resizeCanvasAndRender() {
@@ -162,10 +198,10 @@
           const cssX = (localX * scaleX) / dpr;
           const cssY = (localY * scaleY) / dpr;
 
-          const tileX = Math.floor(cssX / TILE_SIZE);
-          const tileY = Math.floor(cssY / TILE_SIZE);
-
-          return { x: tileX, y: tileY };
+          return {
+            x: Math.floor(cssX / TILE_SIZE),
+            y: Math.floor(cssY / TILE_SIZE)
+          };
         }
 
         function drawGrassAndSpecks(cols, rows) {
@@ -190,22 +226,44 @@
 
         function drawRoads(cols, rows) {
           roadTiles.forEach((key) => {
-            const [xText, yText] = key.split(",");
-            const x = Number.parseInt(xText, 10);
-            const y = Number.parseInt(yText, 10);
-
-            if (x < 0 || y < 0 || x >= cols || y >= rows) {
+            const tile = parseTileKey(key);
+            if (tile.x < 0 || tile.y < 0 || tile.x >= cols || tile.y >= rows) {
               return;
             }
+            const px = tile.x * TILE_SIZE;
+            const py = tile.y * TILE_SIZE;
 
-            const px = x * TILE_SIZE;
-            const py = y * TILE_SIZE;
             ctx.fillStyle = ROAD_FILL;
             ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
 
             ctx.strokeStyle = ROAD_EDGE;
             ctx.lineWidth = 1;
             ctx.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+          });
+        }
+
+        function drawAttractions(cols, rows) {
+          attractionTiles.forEach((key) => {
+            const tile = parseTileKey(key);
+            if (tile.x < 0 || tile.y < 0 || tile.x >= cols || tile.y >= rows) {
+              return;
+            }
+            const px = tile.x * TILE_SIZE;
+            const py = tile.y * TILE_SIZE;
+            const cx = px + TILE_SIZE / 2;
+            const cy = py + TILE_SIZE / 2;
+
+            ctx.fillStyle = ATTRACTION_FILL;
+            ctx.fillRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.33)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 4.5, py + 4.5, TILE_SIZE - 9, TILE_SIZE - 9);
+
+            ctx.beginPath();
+            ctx.fillStyle = ATTRACTION_MARK;
+            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+            ctx.fill();
           });
         }
 
@@ -230,8 +288,78 @@
 
           drawGrassAndSpecks(cols, rows);
           drawRoads(cols, rows);
+          drawAttractions(cols, rows);
           drawHover();
           updateHud();
+        }
+
+        function hasAdjacentRoad(tile) {
+          const directions = [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1]
+          ];
+
+          for (let i = 0; i < directions.length; i += 1) {
+            const d = directions[i];
+            const key = tileKey(tile.x + d[0], tile.y + d[1]);
+            if (roadTiles.has(key)) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        function applyRoadTool(tile) {
+          const key = tileKey(tile.x, tile.y);
+          if (roadTiles.has(key)) {
+            roadTiles.delete(key);
+            setMessage("道を削除しました");
+            return;
+          }
+
+          roadTiles.add(key);
+          setMessage("道を配置しました");
+        }
+
+        function applyAttractionTool(tile) {
+          const key = tileKey(tile.x, tile.y);
+
+          if (roadTiles.has(key)) {
+            setMessage("道の上には施設を置けません");
+            return;
+          }
+
+          if (attractionTiles.has(key)) {
+            setMessage("その場所にはすでに施設があります");
+            return;
+          }
+
+          if (!hasAdjacentRoad(tile)) {
+            setMessage("道の隣に置いてください");
+            return;
+          }
+
+          attractionTiles.add(key);
+          setMessage("施設を配置しました");
+        }
+
+        function applyEraseTool(tile) {
+          const key = tileKey(tile.x, tile.y);
+          if (attractionTiles.has(key)) {
+            attractionTiles.delete(key);
+            setMessage("施設を削除しました");
+            return;
+          }
+
+          if (roadTiles.has(key)) {
+            roadTiles.delete(key);
+            setMessage("道を削除しました");
+            return;
+          }
+
+          setMessage("削除できる対象がありません");
         }
 
         function onPointerMove(event) {
@@ -249,17 +377,38 @@
           if (!tile) {
             return;
           }
-          const key = tileKey(tile.x, tile.y);
-          if (roadTiles.has(key)) {
-            roadTiles.delete(key);
-          } else {
-            roadTiles.add(key);
-          }
+
           hoverTile = tile;
+          if (currentTool === TOOL_ROAD) {
+            applyRoadTool(tile);
+          } else if (currentTool === TOOL_ATTRACTION) {
+            applyAttractionTool(tile);
+          } else {
+            applyEraseTool(tile);
+          }
+
+          render();
+        }
+
+        function onKeyDown(event) {
+          const key = event.key.toLowerCase();
+          if (key === "r") {
+            currentTool = TOOL_ROAD;
+            setMessage("ツールを road に切り替えました");
+          } else if (key === "a") {
+            currentTool = TOOL_ATTRACTION;
+            setMessage("ツールを attraction に切り替えました");
+          } else if (key === "x") {
+            currentTool = TOOL_ERASE;
+            setMessage("ツールを erase に切り替えました");
+          } else {
+            return;
+          }
           render();
         }
 
         window.addEventListener("resize", resizeCanvasAndRender);
+        window.addEventListener("keydown", onKeyDown);
         canvas.addEventListener("mousemove", onPointerMove);
         canvas.addEventListener("mouseleave", onPointerLeave);
         canvas.addEventListener("click", onClick);
