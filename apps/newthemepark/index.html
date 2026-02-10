@@ -1,0 +1,1087 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>build 2026-02-10-newthemepark-v1</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #141a1f;
+      --panel: #1d2730;
+      --panel-border: #314252;
+      --accent: #73d2de;
+      --text: #ecf6ff;
+      --good: #94f7b5;
+      --warn: #ffd27a;
+      --bad: #ff8b8b;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      overflow: hidden;
+    }
+
+    #game-root {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    #hud {
+      background: linear-gradient(#263542, #1a242d);
+      border-bottom: 2px solid var(--panel-border);
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr 1fr;
+      gap: 10px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .hud-card {
+      background: rgba(13, 19, 24, 0.45);
+      border: 1px solid rgba(130, 170, 200, 0.25);
+      border-radius: 8px;
+      padding: 8px 10px;
+      min-width: 0;
+    }
+
+    .hud-title {
+      font-size: 15px;
+      margin: 0 0 4px;
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .stat {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 6px;
+      padding: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status {
+      margin-top: 6px;
+      min-height: 20px;
+      color: var(--warn);
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(45deg, #151f26 25%, transparent 25%),
+        linear-gradient(-45deg, #151f26 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #151f26 75%),
+        linear-gradient(-45deg, transparent 75%, #151f26 75%);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+
+    .kbd {
+      display: inline-block;
+      background: #33424f;
+      border: 1px solid #4f667a;
+      border-radius: 4px;
+      padding: 0 5px;
+      margin: 0 1px;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1200px) {
+      #hud {
+        grid-template-columns: 1fr;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-root">
+    <div id="hud">
+      <div class="hud-card">
+        <h1 class="hud-title">build 2026-02-10-newthemepark-v1</h1>
+        <div class="stats-grid">
+          <div class="stat" id="money"></div>
+          <div class="stat" id="day"></div>
+          <div class="stat" id="visitors"></div>
+          <div class="stat" id="satisfaction"></div>
+          <div class="stat" id="tool"></div>
+          <div class="stat" id="zoom"></div>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+      <div class="hud-card">
+        <h2 class="hud-title">建設キー</h2>
+        <div><span class="kbd">1</span>道（¥15） / <span class="kbd">2</span>アトラクション（¥180） / <span class="kbd">3</span>売店（¥120）</div>
+        <div><span class="kbd">4</span>入口ゲート（1つのみ） / <span class="kbd">X</span>消しゴム</div>
+        <div><span class="kbd">S</span>セーブ / <span class="kbd">L</span>ロード / <span class="kbd">N</span>ニューゲーム</div>
+      </div>
+      <div class="hud-card">
+        <h2 class="hud-title">移動操作</h2>
+        <div><span class="kbd">WASD</span> または <span class="kbd">↑↓←→</span> カメラ移動</div>
+        <div>右ドラッグでもカメラ移動</div>
+        <div>マウスホイールでズーム</div>
+        <div>左クリックで建設</div>
+      </div>
+    </div>
+    <div id="canvas-wrap">
+      <canvas id="game-canvas" aria-label="2Dテーマパークゲーム"></canvas>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      // -----------------------------
+      // Constants / Config
+      // -----------------------------
+      const BUILD_ID = "build 2026-02-10-newthemepark-v1";
+      const SAVE_KEY = "newthemepark-save-v1";
+      const MAP_W = 72;
+      const MAP_H = 48;
+      const BASE_TILE = 32;
+      const DAY_SECONDS = 16;
+      const SPAWN_INTERVAL = 2.2;
+      const MAX_VISITORS = 120;
+
+      const TOOL = {
+        ROAD: "road",
+        RIDE: "ride",
+        SHOP: "shop",
+        GATE: "gate",
+        ERASE: "erase",
+      };
+
+      const COSTS = {
+        road: 15,
+        ride: 180,
+        shop: 120,
+        gate: 0,
+      };
+
+      const INCOME = {
+        ride: 55,
+        shop: 28,
+      };
+
+      const MAINTENANCE = {
+        ride: 8,
+        shop: 5,
+      };
+
+      // -----------------------------
+      // Utilities
+      // -----------------------------
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const key = (x, y) => `${x},${y}`;
+
+      function neighbors4(x, y) {
+        return [
+          { x: x + 1, y },
+          { x: x - 1, y },
+          { x, y: y + 1 },
+          { x, y: y - 1 },
+        ];
+      }
+
+      function tileInBounds(x, y) {
+        return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+      }
+
+      function bfsPath(start, goal, roadSet) {
+        const startKey = key(start.x, start.y);
+        const goalKey = key(goal.x, goal.y);
+        if (startKey === goalKey) return [start];
+
+        const q = [start];
+        let qi = 0;
+        const parent = new Map();
+        const visited = new Set([startKey]);
+
+        while (qi < q.length) {
+          const p = q[qi++];
+          for (const n of neighbors4(p.x, p.y)) {
+            if (!tileInBounds(n.x, n.y)) continue;
+            const nk = key(n.x, n.y);
+            if (visited.has(nk)) continue;
+            if (!roadSet.has(nk) && nk !== goalKey) continue;
+            visited.add(nk);
+            parent.set(nk, p);
+            if (nk === goalKey) {
+              const path = [goal];
+              let cur = p;
+              while (cur) {
+                path.push(cur);
+                const curKey = key(cur.x, cur.y);
+                cur = parent.get(curKey);
+              }
+              path.reverse();
+              return path;
+            }
+            q.push(n);
+          }
+        }
+        return null;
+      }
+
+      // -----------------------------
+      // State
+      // -----------------------------
+      const state = {
+        roads: new Set(),
+        facilities: [],
+        gate: { x: 4, y: Math.floor(MAP_H / 2) },
+        visitors: [],
+        nextFacilityId: 1,
+        money: 650,
+        day: 1,
+        dayTimer: 0,
+        spawnTimer: 0,
+        totalEntries: 0,
+        totalServed: 0,
+        lastStatus: "",
+        statusTimer: 0,
+        tool: TOOL.ROAD,
+        cameraX: 0,
+        cameraY: 0,
+        zoom: 1,
+      };
+
+      // default starter roads
+      for (let y = state.gate.y - 2; y <= state.gate.y + 2; y += 1) {
+        state.roads.add(key(5, y));
+      }
+      for (let x = 5; x < 12; x += 1) {
+        state.roads.add(key(x, state.gate.y));
+      }
+
+      // -----------------------------
+      // DOM refs
+      // -----------------------------
+      const canvas = document.getElementById("game-canvas");
+      const wrap = document.getElementById("canvas-wrap");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      const hudMoney = document.getElementById("money");
+      const hudDay = document.getElementById("day");
+      const hudVisitors = document.getElementById("visitors");
+      const hudSatisfaction = document.getElementById("satisfaction");
+      const hudTool = document.getElementById("tool");
+      const hudStatus = document.getElementById("status");
+      const hudZoom = document.getElementById("zoom");
+
+      if (!ctx) {
+        console.error("Canvas context unavailable");
+        return;
+      }
+
+      // -----------------------------
+      // Camera / Resize / Input state
+      // -----------------------------
+      const keys = new Set();
+      let mouseTile = { x: -1, y: -1 };
+      let isRightDragging = false;
+      let dragLast = { x: 0, y: 0 };
+
+      function resizeCanvas() {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function getTileSize() {
+        return BASE_TILE * state.zoom;
+      }
+
+      function getVisibleWorldBounds() {
+        const tile = getTileSize();
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        return {
+          minX: state.cameraX,
+          minY: state.cameraY,
+          maxX: state.cameraX + w / tile,
+          maxY: state.cameraY + h / tile,
+        };
+      }
+
+      function screenToTile(sx, sy) {
+        const rect = canvas.getBoundingClientRect();
+        const localX = sx - rect.left;
+        const localY = sy - rect.top;
+        const tile = getTileSize();
+        return {
+          x: Math.floor(localX / tile + state.cameraX),
+          y: Math.floor(localY / tile + state.cameraY),
+        };
+      }
+
+      function clampCamera() {
+        const tile = getTileSize();
+        const maxX = Math.max(0, MAP_W - wrap.clientWidth / tile);
+        const maxY = Math.max(0, MAP_H - wrap.clientHeight / tile);
+        state.cameraX = clamp(state.cameraX, 0, maxX);
+        state.cameraY = clamp(state.cameraY, 0, maxY);
+      }
+
+      function setStatus(msg, duration = 2.0) {
+        state.lastStatus = msg;
+        state.statusTimer = duration;
+      }
+
+      // -----------------------------
+      // Build placement rules
+      // -----------------------------
+      function getFacilityAt(x, y) {
+        return state.facilities.find((f) => f.x === x && f.y === y) || null;
+      }
+
+      function isGateAt(x, y) {
+        return state.gate && state.gate.x === x && state.gate.y === y;
+      }
+
+      function hasRoadAdjacent(x, y) {
+        return neighbors4(x, y).some((n) => state.roads.has(key(n.x, n.y)));
+      }
+
+      function canPlaceFacility(x, y) {
+        if (!tileInBounds(x, y)) return { ok: false, reason: "マップ外です" };
+        if (state.roads.has(key(x, y))) return { ok: false, reason: "道の上には置けません" };
+        if (isGateAt(x, y)) return { ok: false, reason: "入口ゲートがある場所です" };
+        if (getFacilityAt(x, y)) return { ok: false, reason: "すでに施設があります" };
+        if (!hasRoadAdjacent(x, y)) return { ok: false, reason: "施設は道に隣接した草地にのみ置けます" };
+        return { ok: true };
+      }
+
+      function spend(cost) {
+        if (state.money < cost) {
+          setStatus("資金不足で建設できません");
+          return false;
+        }
+        state.money -= cost;
+        return true;
+      }
+
+      function handleBuild(x, y) {
+        if (!tileInBounds(x, y)) return;
+        const posKey = key(x, y);
+
+        if (state.tool === TOOL.ROAD) {
+          if (isGateAt(x, y)) {
+            setStatus("入口ゲート上に道は敷けません");
+            return;
+          }
+          if (getFacilityAt(x, y)) {
+            setStatus("施設の上に道は敷けません");
+            return;
+          }
+          if (state.roads.has(posKey)) return;
+          if (!spend(COSTS.road)) return;
+          state.roads.add(posKey);
+          setStatus("道を建設しました", 1.1);
+          return;
+        }
+
+        if (state.tool === TOOL.RIDE || state.tool === TOOL.SHOP) {
+          const type = state.tool === TOOL.RIDE ? "ride" : "shop";
+          const check = canPlaceFacility(x, y);
+          if (!check.ok) {
+            setStatus(check.reason);
+            return;
+          }
+          if (!spend(COSTS[type])) return;
+          state.facilities.push({
+            id: state.nextFacilityId++,
+            type,
+            x,
+            y,
+          });
+          setStatus(type === "ride" ? "アトラクション建設！" : "売店を設置！", 1.1);
+          return;
+        }
+
+        if (state.tool === TOOL.GATE) {
+          if (!tileInBounds(x, y)) return;
+          if (getFacilityAt(x, y)) {
+            setStatus("施設がある場所には入口を置けません");
+            return;
+          }
+          if (state.roads.has(posKey)) {
+            setStatus("道の上には入口を置けません");
+            return;
+          }
+          state.gate = { x, y };
+          setStatus("入口ゲートを移動しました", 1.2);
+          return;
+        }
+
+        if (state.tool === TOOL.ERASE) {
+          if (isGateAt(x, y)) {
+            state.gate = null;
+            state.visitors = [];
+            setStatus("入口ゲートを撤去しました", 1.2);
+            return;
+          }
+          const i = state.facilities.findIndex((f) => f.x === x && f.y === y);
+          if (i >= 0) {
+            state.facilities.splice(i, 1);
+            setStatus("施設を撤去しました", 1.1);
+            return;
+          }
+          if (state.roads.delete(posKey)) {
+            setStatus("道を撤去しました", 1.1);
+          }
+        }
+      }
+
+      // -----------------------------
+      // Visitors
+      // -----------------------------
+      function roadTargetsNearFacility(facility) {
+        return neighbors4(facility.x, facility.y).filter((n) => state.roads.has(key(n.x, n.y)));
+      }
+
+      function findPathToFacility(from, facility) {
+        const targets = roadTargetsNearFacility(facility);
+        let best = null;
+        for (const t of targets) {
+          const p = bfsPath(from, t, state.roads);
+          if (p && (!best || p.length < best.length)) best = p;
+        }
+        return best;
+      }
+
+      function spawnVisitor() {
+        if (!state.gate) {
+          return;
+        }
+        if (state.visitors.length >= MAX_VISITORS) {
+          return;
+        }
+
+        const around = neighbors4(state.gate.x, state.gate.y).filter((n) => state.roads.has(key(n.x, n.y)));
+        if (!around.length) {
+          setStatus("入口ゲートの隣に道が必要です");
+          return;
+        }
+
+        const spawnTile = around[randInt(0, around.length - 1)];
+        state.visitors.push({
+          x: spawnTile.x + 0.5,
+          y: spawnTile.y + 0.5,
+          speed: 2.0 + Math.random() * 0.6,
+          path: [],
+          pathIndex: 0,
+          targetFacilityId: null,
+          stayTimer: 0,
+          mood: 55 + Math.random() * 35,
+          phase: "seeking",
+          wanderTimer: 0,
+          colorSeed: Math.random(),
+        });
+        state.totalEntries += 1;
+      }
+
+      function assignTarget(visitor) {
+        const from = { x: Math.floor(visitor.x), y: Math.floor(visitor.y) };
+        const facilities = state.facilities.slice();
+        if (!facilities.length) {
+          visitor.phase = "leaving";
+          return;
+        }
+
+        for (let i = facilities.length - 1; i > 0; i -= 1) {
+          const j = randInt(0, i);
+          const t = facilities[i];
+          facilities[i] = facilities[j];
+          facilities[j] = t;
+        }
+
+        let bestPath = null;
+        let picked = null;
+        for (const facility of facilities) {
+          const p = findPathToFacility(from, facility);
+          if (p && (!bestPath || p.length < bestPath.length)) {
+            bestPath = p;
+            picked = facility;
+          }
+        }
+
+        if (!bestPath || !picked) {
+          visitor.phase = "leaving";
+          return;
+        }
+
+        visitor.path = bestPath;
+        visitor.pathIndex = 0;
+        visitor.targetFacilityId = picked.id;
+        visitor.phase = "moving";
+      }
+
+      function assignReturnPath(visitor) {
+        if (!state.gate) {
+          visitor.phase = "gone";
+          return;
+        }
+        const from = { x: Math.floor(visitor.x), y: Math.floor(visitor.y) };
+        const gateRoads = neighbors4(state.gate.x, state.gate.y).filter((n) => state.roads.has(key(n.x, n.y)));
+        let best = null;
+        for (const gr of gateRoads) {
+          const p = bfsPath(from, gr, state.roads);
+          if (p && (!best || p.length < best.length)) best = p;
+        }
+
+        if (!best) {
+          visitor.phase = "gone";
+          return;
+        }
+        visitor.path = best;
+        visitor.pathIndex = 0;
+        visitor.phase = "returning";
+      }
+
+      function moveVisitorAlongPath(visitor, dt) {
+        if (!visitor.path.length) return true;
+        const idx = clamp(visitor.pathIndex, 0, visitor.path.length - 1);
+        const targetTile = visitor.path[idx];
+        const tx = targetTile.x + 0.5;
+        const ty = targetTile.y + 0.5;
+        const dx = tx - visitor.x;
+        const dy = ty - visitor.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.001) {
+          if (visitor.pathIndex < visitor.path.length - 1) {
+            visitor.pathIndex += 1;
+            return false;
+          }
+          return true;
+        }
+
+        const step = visitor.speed * dt;
+        if (step >= dist) {
+          visitor.x = tx;
+          visitor.y = ty;
+          if (visitor.pathIndex < visitor.path.length - 1) {
+            visitor.pathIndex += 1;
+            return false;
+          }
+          return true;
+        }
+
+        visitor.x += (dx / dist) * step;
+        visitor.y += (dy / dist) * step;
+        return false;
+      }
+
+      function tickVisitors(dt) {
+        for (const v of state.visitors) {
+          if (v.phase === "seeking") {
+            assignTarget(v);
+          } else if (v.phase === "moving") {
+            const arrived = moveVisitorAlongPath(v, dt);
+            if (arrived) {
+              const facility = state.facilities.find((f) => f.id === v.targetFacilityId);
+              if (!facility) {
+                v.phase = "seeking";
+                continue;
+              }
+              v.phase = "using";
+              v.stayTimer = 0.8 + Math.random() * 1.4;
+              v.mood = clamp(v.mood + randInt(4, 10), 0, 100);
+            }
+          } else if (v.phase === "using") {
+            v.stayTimer -= dt;
+            if (v.stayTimer <= 0) {
+              const facility = state.facilities.find((f) => f.id === v.targetFacilityId);
+              if (facility) {
+                state.money += INCOME[facility.type];
+                state.totalServed += 1;
+                if (Math.random() < 0.35) {
+                  v.phase = "leaving";
+                } else {
+                  v.phase = "seeking";
+                }
+              } else {
+                v.phase = "leaving";
+              }
+            }
+          } else if (v.phase === "leaving") {
+            assignReturnPath(v);
+          } else if (v.phase === "returning") {
+            const arrived = moveVisitorAlongPath(v, dt);
+            if (arrived) {
+              v.phase = "gone";
+            }
+          }
+        }
+
+        state.visitors = state.visitors.filter((v) => v.phase !== "gone");
+      }
+
+      // -----------------------------
+      // Simulation
+      // -----------------------------
+      function calcSatisfaction() {
+        if (state.totalEntries === 0) return 52;
+        const servedRatio = clamp(state.totalServed / state.totalEntries, 0, 1);
+        const facilityFactor = clamp(state.facilities.length / 12, 0, 1);
+        const moneyStress = state.money < 0 ? 0.6 : 1;
+        const score = 30 + servedRatio * 45 + facilityFactor * 20;
+        return clamp(Math.round(score * moneyStress), 0, 100);
+      }
+
+      function doDailyCosts() {
+        let daily = 3;
+        for (const f of state.facilities) {
+          daily += MAINTENANCE[f.type] || 0;
+        }
+        state.money -= daily;
+        setStatus(`維持費 ¥${daily} を支払いました`, 1.3);
+      }
+
+      function update(dt) {
+        const camSpeed = 9 / state.zoom;
+        if (keys.has("w") || keys.has("arrowup")) state.cameraY -= camSpeed * dt;
+        if (keys.has("s") || keys.has("arrowdown")) state.cameraY += camSpeed * dt;
+        if (keys.has("a") || keys.has("arrowleft")) state.cameraX -= camSpeed * dt;
+        if (keys.has("d") || keys.has("arrowright")) state.cameraX += camSpeed * dt;
+        clampCamera();
+
+        if (state.statusTimer > 0) state.statusTimer -= dt;
+
+        state.dayTimer += dt;
+        if (state.dayTimer >= DAY_SECONDS) {
+          state.dayTimer -= DAY_SECONDS;
+          state.day += 1;
+          doDailyCosts();
+        }
+
+        if (!state.gate) {
+          if (state.statusTimer <= 0) {
+            setStatus("入口ゲートを置いてください", 0.6);
+          }
+        } else {
+          state.spawnTimer += dt;
+          if (state.spawnTimer >= SPAWN_INTERVAL) {
+            state.spawnTimer = 0;
+            spawnVisitor();
+          }
+        }
+
+        tickVisitors(dt);
+      }
+
+      // -----------------------------
+      // Rendering
+      // -----------------------------
+      function drawGrass(x, y, tile) {
+        const seed = ((x * 928371 + y * 12347) % 1000) / 1000;
+        const base = seed > 0.5 ? "#4b9148" : "#4a8b45";
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, tile, tile);
+
+        ctx.fillStyle = "rgba(18, 52, 17, 0.28)";
+        ctx.fillRect(0, tile - 4, tile, 4);
+
+        ctx.fillStyle = "rgba(122, 198, 117, 0.22)";
+        for (let i = 0; i < 3; i += 1) {
+          const px = ((x * 17 + y * 29 + i * 11) % 28) + 2;
+          const py = ((x * 13 + y * 19 + i * 7) % 28) + 2;
+          ctx.fillRect(px * tile / 32, py * tile / 32, Math.max(1, tile / 16), Math.max(1, tile / 16));
+        }
+      }
+
+      function drawRoad(tile) {
+        ctx.fillStyle = "#8d9096";
+        ctx.fillRect(0, 0, tile, tile);
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        for (let i = 0; i < 3; i += 1) {
+          const y = (i + 1) * tile / 4;
+          ctx.fillRect(0, y, tile, 1);
+        }
+        ctx.fillStyle = "rgba(0,0,0,0.12)";
+        ctx.fillRect(0, tile - 3, tile, 3);
+      }
+
+      function drawGate(tile) {
+        ctx.fillStyle = "#e2b25a";
+        ctx.fillRect(tile * 0.1, tile * 0.55, tile * 0.8, tile * 0.35);
+        ctx.fillStyle = "#a96b2e";
+        ctx.fillRect(tile * 0.2, tile * 0.2, tile * 0.2, tile * 0.6);
+        ctx.fillRect(tile * 0.6, tile * 0.2, tile * 0.2, tile * 0.6);
+        ctx.fillStyle = "#f4d58d";
+        ctx.fillRect(tile * 0.22, tile * 0.3, tile * 0.56, tile * 0.15);
+      }
+
+      function drawRide(tile) {
+        ctx.fillStyle = "#7b63d9";
+        ctx.fillRect(tile * 0.15, tile * 0.2, tile * 0.7, tile * 0.65);
+        ctx.fillStyle = "#b5a6ff";
+        ctx.fillRect(tile * 0.24, tile * 0.28, tile * 0.52, tile * 0.18);
+        ctx.fillStyle = "#37247f";
+        ctx.fillRect(tile * 0.22, tile * 0.56, tile * 0.56, tile * 0.2);
+      }
+
+      function drawShop(tile) {
+        ctx.fillStyle = "#e26767";
+        ctx.fillRect(tile * 0.16, tile * 0.34, tile * 0.68, tile * 0.5);
+        ctx.fillStyle = "#ffc0c0";
+        ctx.fillRect(tile * 0.16, tile * 0.23, tile * 0.68, tile * 0.16);
+        ctx.fillStyle = "#a63f3f";
+        ctx.fillRect(tile * 0.42, tile * 0.5, tile * 0.16, tile * 0.34);
+      }
+
+      function drawVisitor(v, tsize, elapsed) {
+        const sx = (v.x - state.cameraX) * tsize;
+        const sy = (v.y - state.cameraY) * tsize;
+        const bob = Math.sin((elapsed * 10) + v.colorSeed * Math.PI * 2) * 1.8;
+        const r = Math.max(2, tsize * 0.16);
+
+        const hue = 180 + Math.floor(v.colorSeed * 130);
+        ctx.fillStyle = `hsl(${hue} 75% 62%)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy - 2 + bob, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.beginPath();
+        ctx.ellipse(sx, sy + r * 0.9, r * 0.9, r * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawGrid(bounds, tile) {
+        ctx.strokeStyle = "rgba(14, 33, 17, 0.24)";
+        ctx.lineWidth = 1;
+        for (let x = Math.floor(bounds.minX); x <= Math.ceil(bounds.maxX); x += 1) {
+          const sx = (x - state.cameraX) * tile;
+          ctx.beginPath();
+          ctx.moveTo(sx, 0);
+          ctx.lineTo(sx, wrap.clientHeight);
+          ctx.stroke();
+        }
+        for (let y = Math.floor(bounds.minY); y <= Math.ceil(bounds.maxY); y += 1) {
+          const sy = (y - state.cameraY) * tile;
+          ctx.beginPath();
+          ctx.moveTo(0, sy);
+          ctx.lineTo(wrap.clientWidth, sy);
+          ctx.stroke();
+        }
+      }
+
+      function drawPreview(tile) {
+        if (!tileInBounds(mouseTile.x, mouseTile.y)) return;
+        const sx = (mouseTile.x - state.cameraX) * tile;
+        const sy = (mouseTile.y - state.cameraY) * tile;
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        if (state.tool === TOOL.ROAD) {
+          drawRoad(tile);
+        } else if (state.tool === TOOL.RIDE) {
+          drawRide(tile);
+        } else if (state.tool === TOOL.SHOP) {
+          drawShop(tile);
+        } else if (state.tool === TOOL.GATE) {
+          drawGate(tile);
+        } else {
+          ctx.fillStyle = "#e83838";
+          ctx.fillRect(0, 0, tile, tile);
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sx + 1, sy + 1, tile - 2, tile - 2);
+      }
+
+      function render(elapsed) {
+        const tile = getTileSize();
+        const bounds = getVisibleWorldBounds();
+
+        ctx.fillStyle = "#203122";
+        ctx.fillRect(0, 0, wrap.clientWidth, wrap.clientHeight);
+
+        const minX = Math.max(0, Math.floor(bounds.minX) - 1);
+        const minY = Math.max(0, Math.floor(bounds.minY) - 1);
+        const maxX = Math.min(MAP_W - 1, Math.ceil(bounds.maxX) + 1);
+        const maxY = Math.min(MAP_H - 1, Math.ceil(bounds.maxY) + 1);
+
+        for (let y = minY; y <= maxY; y += 1) {
+          for (let x = minX; x <= maxX; x += 1) {
+            const sx = (x - state.cameraX) * tile;
+            const sy = (y - state.cameraY) * tile;
+            ctx.save();
+            ctx.translate(sx, sy);
+            drawGrass(x, y, tile);
+            if (state.roads.has(key(x, y))) {
+              drawRoad(tile);
+            }
+            if (state.gate && x === state.gate.x && y === state.gate.y) {
+              drawGate(tile);
+            }
+            const facility = getFacilityAt(x, y);
+            if (facility) {
+              if (facility.type === "ride") drawRide(tile);
+              else drawShop(tile);
+            }
+            ctx.restore();
+          }
+        }
+
+        drawGrid(bounds, tile);
+
+        for (const v of state.visitors) {
+          drawVisitor(v, tile, elapsed);
+        }
+
+        drawPreview(tile);
+      }
+
+      function updateHud() {
+        const satisfaction = calcSatisfaction();
+        hudMoney.textContent = `所持金: ¥${Math.floor(state.money)}`;
+        hudDay.textContent = `日数: ${state.day}`;
+        hudVisitors.textContent = `来園者: ${state.visitors.length}`;
+        hudSatisfaction.textContent = `満足度: ${satisfaction}`;
+        const toolName = {
+          [TOOL.ROAD]: "道",
+          [TOOL.RIDE]: "アトラクション",
+          [TOOL.SHOP]: "売店",
+          [TOOL.GATE]: "入口ゲート",
+          [TOOL.ERASE]: "消しゴム",
+        }[state.tool];
+        hudTool.textContent = `現在ツール: ${toolName}`;
+        hudZoom.textContent = `ズーム: ${Math.round(state.zoom * 100)}%`;
+        hudStatus.textContent = state.statusTimer > 0 ? state.lastStatus : (state.gate ? "" : "入口ゲートを置いてください");
+        hudStatus.style.color = state.money < 0 ? "var(--bad)" : "var(--warn)";
+      }
+
+      // -----------------------------
+      // Save / Load
+      // -----------------------------
+      function serialize() {
+        return {
+          build: BUILD_ID,
+          roads: [...state.roads],
+          facilities: state.facilities,
+          gate: state.gate,
+          nextFacilityId: state.nextFacilityId,
+          money: state.money,
+          day: state.day,
+          totalEntries: state.totalEntries,
+          totalServed: state.totalServed,
+          cameraX: state.cameraX,
+          cameraY: state.cameraY,
+          zoom: state.zoom,
+        };
+      }
+
+      function applyLoaded(data) {
+        if (!data || !Array.isArray(data.roads)) {
+          setStatus("ロードデータが不正です");
+          return;
+        }
+        state.roads = new Set(data.roads);
+        state.facilities = Array.isArray(data.facilities) ? data.facilities : [];
+        state.gate = data.gate || null;
+        state.nextFacilityId = Number(data.nextFacilityId || 1);
+        state.money = Number(data.money || 0);
+        state.day = Number(data.day || 1);
+        state.totalEntries = Number(data.totalEntries || 0);
+        state.totalServed = Number(data.totalServed || 0);
+        state.cameraX = Number(data.cameraX || 0);
+        state.cameraY = Number(data.cameraY || 0);
+        state.zoom = clamp(Number(data.zoom || 1), 0.6, 2.4);
+        state.visitors = [];
+        clampCamera();
+        setStatus("ロードしました", 1.2);
+      }
+
+      function saveGame() {
+        try {
+          localStorage.setItem(SAVE_KEY, JSON.stringify(serialize()));
+          setStatus("セーブしました", 1.2);
+        } catch {
+          setStatus("セーブに失敗しました（ブラウザ設定を確認）", 1.8);
+        }
+      }
+
+      function loadGame() {
+        try {
+          const raw = localStorage.getItem(SAVE_KEY);
+          if (!raw) {
+            setStatus("セーブデータがありません", 1.3);
+            return;
+          }
+          const parsed = JSON.parse(raw);
+          applyLoaded(parsed);
+        } catch {
+          setStatus("ロードに失敗しました", 1.6);
+        }
+      }
+
+      function resetGame() {
+        state.roads = new Set();
+        state.facilities = [];
+        state.visitors = [];
+        state.gate = { x: 4, y: Math.floor(MAP_H / 2) };
+        for (let y = state.gate.y - 2; y <= state.gate.y + 2; y += 1) {
+          state.roads.add(key(5, y));
+        }
+        for (let x = 5; x < 12; x += 1) {
+          state.roads.add(key(x, state.gate.y));
+        }
+        state.nextFacilityId = 1;
+        state.money = 650;
+        state.day = 1;
+        state.dayTimer = 0;
+        state.spawnTimer = 0;
+        state.totalEntries = 0;
+        state.totalServed = 0;
+        state.cameraX = 0;
+        state.cameraY = 0;
+        state.zoom = 1;
+        setStatus("ニューゲーム開始", 1.3);
+      }
+
+      // -----------------------------
+      // Event wiring
+      // -----------------------------
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        clampCamera();
+      });
+
+      window.addEventListener("keydown", (e) => {
+        const k = e.key.toLowerCase();
+        keys.add(k);
+
+        if (["1", "2", "3", "4", "x", "s", "l", "n"].includes(k)) {
+          e.preventDefault();
+        }
+
+        if (k === "1") state.tool = TOOL.ROAD;
+        else if (k === "2") state.tool = TOOL.RIDE;
+        else if (k === "3") state.tool = TOOL.SHOP;
+        else if (k === "4") state.tool = TOOL.GATE;
+        else if (k === "x") state.tool = TOOL.ERASE;
+        else if (k === "s") saveGame();
+        else if (k === "l") loadGame();
+        else if (k === "n") resetGame();
+      });
+
+      window.addEventListener("keyup", (e) => {
+        keys.delete(e.key.toLowerCase());
+      });
+
+      canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+      canvas.addEventListener("mousemove", (e) => {
+        const tilePos = screenToTile(e.clientX, e.clientY);
+        mouseTile = tilePos;
+
+        if (isRightDragging) {
+          const dx = e.clientX - dragLast.x;
+          const dy = e.clientY - dragLast.y;
+          dragLast = { x: e.clientX, y: e.clientY };
+          const tile = getTileSize();
+          state.cameraX -= dx / tile;
+          state.cameraY -= dy / tile;
+          clampCamera();
+        }
+      });
+
+      canvas.addEventListener("mousedown", (e) => {
+        if (e.button === 2) {
+          isRightDragging = true;
+          dragLast = { x: e.clientX, y: e.clientY };
+          return;
+        }
+        if (e.button !== 0) return;
+        const t = screenToTile(e.clientX, e.clientY);
+        handleBuild(t.x, t.y);
+      });
+
+      window.addEventListener("mouseup", (e) => {
+        if (e.button === 2) {
+          isRightDragging = false;
+        }
+      });
+
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const oldZoom = state.zoom;
+        const dz = e.deltaY < 0 ? 1.1 : 0.9;
+        state.zoom = clamp(state.zoom * dz, 0.6, 2.4);
+        const mouse = screenToTile(e.clientX, e.clientY);
+
+        const rect = canvas.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const localY = e.clientY - rect.top;
+        const oldTile = BASE_TILE * oldZoom;
+        const newTile = BASE_TILE * state.zoom;
+
+        const worldX = state.cameraX + localX / oldTile;
+        const worldY = state.cameraY + localY / oldTile;
+        state.cameraX = worldX - localX / newTile;
+        state.cameraY = worldY - localY / newTile;
+        clampCamera();
+        mouseTile = mouse;
+      }, { passive: false });
+
+      // -----------------------------
+      // Main loop
+      // -----------------------------
+      resizeCanvas();
+      updateHud();
+
+      let last = performance.now();
+      function frame(now) {
+        const dt = clamp((now - last) / 1000, 0, 0.05);
+        last = now;
+        update(dt);
+        render(now / 1000);
+        updateHud();
+        requestAnimationFrame(frame);
+      }
+
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
